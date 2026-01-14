@@ -75,6 +75,7 @@ export const convertImageToLatex = async (
 
 export const refactorLatex = async (
   text: string,
+  prompt?: string,
   customServerUrl?: string,
   timeoutMs?: number
 ): Promise<string> => {
@@ -90,7 +91,7 @@ export const refactorLatex = async (
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, prompt }),
       signal: controller.signal
     });
     
