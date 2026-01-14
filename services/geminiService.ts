@@ -12,12 +12,22 @@ export const convertImageToLatex = async (
   mimeType: string,
   retries = 3,
   customServerUrl?: string,
-  timeoutMs?: number
+  timeoutMs?: number,
+  signal?: AbortSignal
 ): Promise<string> => {
   // If custom URL is provided, use it. Otherwise use the Vercel serverless function.
   const endpoint = customServerUrl ? `${customServerUrl}/api/convert` : '/api/convert';
   
   const controller = new AbortController();
+  
+  // Link the passed signal to this internal controller
+  if (signal) {
+    if (signal.aborted) {
+        controller.abort();
+    } else {
+        signal.addEventListener('abort', () => controller.abort());
+    }
+  }
   
   // Local models might take longer. Use provided timeout, or default to 300s (5min) for local, 60s for cloud
   const timeoutDuration = timeoutMs || (customServerUrl ? 300000 : 60000);
@@ -43,9 +53,12 @@ export const convertImageToLatex = async (
       
       // Обработка 429 (Too Many Requests) - актуально только для облака
       if (!customServerUrl && response.status === 429 && retries > 0) {
+        // Don't retry if aborted
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
         console.warn(`Rate limit hit. Retrying... Attempts left: ${retries}`);
         await wait(20000 + Math.random() * 2000); 
-        return convertImageToLatex(base64Data, mimeType, retries - 1, customServerUrl, timeoutMs);
+        return convertImageToLatex(base64Data, mimeType, retries - 1, customServerUrl, timeoutMs, signal);
       }
 
       throw new Error(errorData.error || `Server error: ${response.status}`);
@@ -58,8 +71,13 @@ export const convertImageToLatex = async (
     clearTimeout(timeoutId);
     
     if (error.name === 'AbortError') {
-       console.error("Conversion timed out");
-       throw new Error(`Превышено время ожидания (${timeoutDuration/1000}с). Попробуйте увеличить таймаут в настройках.`);
+       // If it was the timeout controller that aborted, and not the user signal
+       if (!signal?.aborted && controller.signal.aborted) {
+           console.error("Conversion timed out");
+           throw new Error(`Превышено время ожидания (${timeoutDuration/1000}с).`);
+       }
+       // Otherwise it was a user cancel
+       throw error;
     }
 
     console.error("Conversion Service Error:", error);
@@ -77,11 +95,21 @@ export const refactorLatex = async (
   text: string,
   prompt?: string,
   customServerUrl?: string,
-  timeoutMs?: number
+  timeoutMs?: number,
+  signal?: AbortSignal
 ): Promise<string> => {
   const endpoint = customServerUrl ? `${customServerUrl}/api/refactor` : '/api/refactor';
   
   const controller = new AbortController();
+
+  if (signal) {
+    if (signal.aborted) {
+        controller.abort();
+    } else {
+        signal.addEventListener('abort', () => controller.abort());
+    }
+  }
+
   const timeoutDuration = timeoutMs || (customServerUrl ? 300000 : 60000);
   const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
 
@@ -109,7 +137,10 @@ export const refactorLatex = async (
     clearTimeout(timeoutId);
     
     if (error.name === 'AbortError') {
-       throw new Error(`Превышено время ожидания (${timeoutDuration/1000}с).`);
+       if (!signal?.aborted && controller.signal.aborted) {
+          throw new Error(`Превышено время ожидания (${timeoutDuration/1000}с).`);
+       }
+       throw error;
     }
 
     console.error("Refactor Service Error:", error);
