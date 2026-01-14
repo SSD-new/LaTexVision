@@ -1348,25 +1348,92 @@ const App: React.FC = () => {
 
     setStatus(AppStatus.LOADING);
     const originalText = editorContent;
+
+    // 1. Basic parsing to get body
+    const docStartRegex = /\\begin\{document\}/;
+    const docEndRegex = /\\end\{document\}/;
+    const startMatch = originalText.match(docStartRegex);
+    const endMatch = originalText.match(docEndRegex);
+
+    if (!startMatch || !endMatch) {
+        setError("Не удалось найти структуру документа.");
+        setStatus(AppStatus.ERROR);
+        return;
+    }
+
+    const preamble = originalText.substring(0, startMatch.index! + startMatch[0].length);
+    const bodyRaw = originalText.substring(startMatch.index! + startMatch[0].length, endMatch.index!);
+    const postscript = originalText.substring(endMatch.index!);
+
+    // 2. Split into pages using markers
+    // Using capturing group to keep markers in the array
+    const parts = bodyRaw.split(new RegExp(`(${PAGE_MARKER_REGEX_SOURCE})`, 'i'));
+
+    interface PageChunk {
+        marker: string;
+        content: string;
+    }
+
+    const chunks: PageChunk[] = [];
+    let currentMarker = "";
     
-    // Clear content but keep structure for user feedback "processing..."
-    setEditorContent(LATEX_PREAMBLE + "\n\n\\begin{document}\n\n% Выполняется ИИ-рефакторинг...\n\n\\end{document}");
+    for (const part of parts) {
+        if (new RegExp(`^${PAGE_MARKER_REGEX_SOURCE}$`, 'i').test(part)) {
+            currentMarker = part;
+        } else {
+            if (part.trim() === "" && currentMarker === "") continue; 
+            chunks.push({ marker: currentMarker, content: part });
+            currentMarker = "";
+        }
+    }
+    
+    if (chunks.length === 0 && bodyRaw.trim().length > 0) {
+        chunks.push({ marker: "", content: bodyRaw });
+    }
+
+    // 3. Process loop
+    const activeServerUrl = settings.useLocalServer ? settings.localServerUrl : undefined;
+    const requestTimeoutMs = (settings.requestTimeout || 300) * 1000;
+    
+    setEditorContent(preamble + "\n% Обработка документа по страницам...\n" + postscript);
+    
+    const refinedChunks: string[] = [];
+    setProgress({ current: 0, total: chunks.length, etaSeconds: 0 });
 
     try {
-       const activeServerUrl = settings.useLocalServer ? settings.localServerUrl : undefined;
-       const requestTimeoutMs = (settings.requestTimeout || 300) * 1000;
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            let resultText = chunk.content;
+            
+            const cleanContent = chunk.content.replace(/\\newpage/g, "").trim();
+            
+            if (cleanContent.length > 5) {
+                try {
+                   // Remove \newpage for the AI context
+                   const contentForAi = chunk.content.replace(/\\newpage/g, "\n"); 
+                   
+                   resultText = await refactorLatex(contentForAi, userPrompt, activeServerUrl, requestTimeoutMs);
+                } catch (err: any) {
+                    console.error(`Page ${i+1} refactor error:`, err);
+                    resultText = chunk.content + `\n% Ошибка: ${err.message}`;
+                }
+            }
 
-       const cleanedText = await refactorLatex(originalText, userPrompt, activeServerUrl, requestTimeoutMs);
-
-       // Rebuild document
-       const fullDoc = LATEX_PREAMBLE + "\n\n\\begin{document}\n\n" + cleanedText + "\n\n\\end{document}";
-       setEditorContent(fullDoc);
-       setStatus(AppStatus.SUCCESS);
+            refinedChunks.push(`${chunk.marker}\n${resultText}`);
+            setProgress({ current: i + 1, total: chunks.length, etaSeconds: 0 });
+            
+            const currentBody = refinedChunks.join("\n\n\\newpage\n\n");
+            setEditorContent(preamble + "\n" + currentBody + "\n" + postscript);
+            
+            await new Promise(r => setTimeout(r, 100));
+        }
+        
+        setStatus(AppStatus.SUCCESS);
     } catch (e: any) {
-       console.error(e);
-       setError("Ошибка рефакторинга: " + e.message);
-       setStatus(AppStatus.ERROR);
-       setEditorContent(originalText); // Restore on error
+        console.error(e);
+        setError(e.message);
+        setStatus(AppStatus.ERROR);
+        setEditorContent(originalText);
     }
   };
 
