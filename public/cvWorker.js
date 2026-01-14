@@ -1,0 +1,1 @@
+// This file is deprecated. The worker is now loaded from a Blob URL in services/cvWorkerScript.ts

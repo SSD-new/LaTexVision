@@ -1,0 +1,10 @@
+
+flask
+flask-cors
+Pillow
+transformers
+accelerate
+qwen-vl-utils
+torch
+torchvision
+bitsandbytes
