@@ -1,0 +1,7 @@
+{
+  "name": "final 1.0",
+  "description": "A powerful AI-driven tool that converts images of handwritten or printed math and text into clean, professional LaTeX code using Gemini 3 Flash.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
