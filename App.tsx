@@ -555,6 +555,67 @@ const SettingsModal: React.FC<{
   );
 };
 
+const RefactorModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: (prompt: string) => void;
+}> = ({ isOpen, onClose, onConfirm }) => {
+  const [prompt, setPrompt] = useState("");
+
+  useEffect(() => {
+    if (isOpen) setPrompt("");
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+          <h3 className="font-black text-slate-800 flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-purple-600" />
+            ИИ Редактирование
+          </h3>
+          <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full text-slate-500">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        
+        <div className="p-6 space-y-4">
+           <div className="p-3 bg-purple-50 text-purple-800 text-xs font-medium rounded-lg border border-purple-100">
+              Здесь можно задать дополнительные инструкции для обработки текста.
+           </div>
+           <div className="space-y-2">
+             <label className="text-xs font-bold text-slate-600 uppercase">Пользовательский промт (необязательно)</label>
+             <textarea 
+               value={prompt}
+               onChange={(e) => setPrompt(e.target.value)}
+               placeholder="Например: Исправь опечатки, убери лишние пробелы..."
+               className="w-full h-32 p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 outline-none resize-none placeholder:text-slate-400"
+             />
+           </div>
+        </div>
+
+        <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+           <button 
+             onClick={onClose}
+             className="px-4 py-2 text-slate-600 font-bold text-sm hover:bg-slate-200 rounded-xl transition-colors"
+           >
+             Отмена
+           </button>
+           <button 
+             onClick={() => onConfirm(prompt)}
+             className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-sm shadow-md transition-all active:scale-95"
+           >
+             <Play className="w-3.5 h-3.5 fill-current" />
+             Запустить
+           </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 // --- Main App Component ---
 
@@ -592,6 +653,7 @@ const App: React.FC = () => {
   // Settings State
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [showRefactorModal, setShowRefactorModal] = useState(false);
   
   // Font Size State
   const [editorFontSize, setEditorFontSize] = useState(15);
@@ -1281,7 +1343,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleRefactor = async () => {
+  const handleRefactor = async (userPrompt: string = "") => {
     if (!editorContent || status === AppStatus.LOADING) return;
 
     setStatus(AppStatus.LOADING);
@@ -1294,7 +1356,7 @@ const App: React.FC = () => {
        const activeServerUrl = settings.useLocalServer ? settings.localServerUrl : undefined;
        const requestTimeoutMs = (settings.requestTimeout || 300) * 1000;
 
-       const cleanedText = await refactorLatex(originalText, activeServerUrl, requestTimeoutMs);
+       const cleanedText = await refactorLatex(originalText, userPrompt, activeServerUrl, requestTimeoutMs);
 
        // Rebuild document
        const fullDoc = LATEX_PREAMBLE + "\n\n\\begin{document}\n\n" + cleanedText + "\n\n\\end{document}";
@@ -1605,6 +1667,16 @@ const App: React.FC = () => {
         settings={settings}
         onSave={saveSettings}
       />
+      
+      {/* Refactor Modal */}
+      <RefactorModal 
+        isOpen={showRefactorModal} 
+        onClose={() => setShowRefactorModal(false)}
+        onConfirm={(prompt) => {
+          handleRefactor(prompt);
+          setShowRefactorModal(false);
+        }}
+      />
 
       {/* MAIN CONTENT */}
       <div 
@@ -1655,12 +1727,12 @@ const App: React.FC = () => {
                       </button>
 
                       <button 
-                        onClick={handleRefactor}
+                        onClick={() => setShowRefactorModal(true)}
                         disabled={status === AppStatus.LOADING || isAnalyzing}
                         className="w-full flex items-center gap-3 px-4 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-all font-bold text-sm shadow-md disabled:opacity-50 mt-2"
                       >
                         <Sparkles className="w-4 h-4" />
-                        <span>ИИ проверка кода</span>
+                        <span>ИИ редактирование</span>
                       </button>
 
                       <div className="h-px bg-slate-100 my-2" />
