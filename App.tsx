@@ -35,7 +35,8 @@ import {
   FileCode2,
   GripVertical,
   Copy,
-  Type
+  Type,
+  Square
 } from 'lucide-react';
 import { convertImageToLatex, refactorLatex } from './services/geminiService';
 import { segmentImage, ImageBlock, BoundingBox, SegmentationConfig, checkOpenCVReady } from './services/layoutService';
@@ -668,6 +669,9 @@ const App: React.FC = () => {
 
   const currentPage = pages[currentPageIndex] || null;
 
+  // --- Cancel Controller ---
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   // --- Autoscaling Logic for Paper ---
   const paperContentRef = useRef<HTMLDivElement>(null);
   const [paperScale, setPaperScale] = useState(1);
@@ -835,6 +839,15 @@ const App: React.FC = () => {
     setSettings(newSettings);
     localStorage.setItem('latexVisionSettings', JSON.stringify(newSettings));
     setShowSettings(false);
+  };
+
+  const handleCancel = () => {
+     if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+        setStatus(AppStatus.IDLE);
+        setError("Операция отменена пользователем.");
+     }
   };
 
   const detectLines = useCallback(async (
@@ -1181,6 +1194,9 @@ const App: React.FC = () => {
 
   const handleConvertAll = async () => {
     setStatus(AppStatus.LOADING);
+    
+    // Create new abort controller
+    abortControllerRef.current = new AbortController();
 
     const pagesWithActualBlocks = pages.map(p => ({
       ...p,
@@ -1248,9 +1264,13 @@ const App: React.FC = () => {
                'image/jpeg', 
                3, 
                activeServerUrl,
-               requestTimeoutMs
+               requestTimeoutMs,
+               abortControllerRef.current.signal
              );
           } catch (err: any) {
+             if (err.name === 'AbortError' || err.message === 'Aborted') {
+                 throw err; // Stop the loop on cancel
+             }
              console.error(`Block processing failed:`, err);
              if (err.message.includes("Превышено время")) {
                  throw err;
@@ -1338,8 +1358,15 @@ const App: React.FC = () => {
 
       setStatus(AppStatus.SUCCESS);
     } catch (err: any) {
-      setError("Ошибка: " + err.message);
-      setStatus(AppStatus.ERROR);
+      if (err.name === 'AbortError' || err.message === 'Aborted') {
+          setError("Генерация остановлена пользователем.");
+          setStatus(AppStatus.IDLE);
+      } else {
+          setError("Ошибка: " + err.message);
+          setStatus(AppStatus.ERROR);
+      }
+    } finally {
+        abortControllerRef.current = null;
     }
   };
 
@@ -1347,6 +1374,8 @@ const App: React.FC = () => {
     if (!editorContent || status === AppStatus.LOADING) return;
 
     setStatus(AppStatus.LOADING);
+    abortControllerRef.current = new AbortController();
+
     const originalText = editorContent;
 
     // 1. Basic parsing to get body
@@ -1358,6 +1387,7 @@ const App: React.FC = () => {
     if (!startMatch || !endMatch) {
         setError("Не удалось найти структуру документа.");
         setStatus(AppStatus.ERROR);
+        abortControllerRef.current = null;
         return;
     }
 
@@ -1412,8 +1442,16 @@ const App: React.FC = () => {
                    // Remove \newpage for the AI context
                    const contentForAi = chunk.content.replace(/\\newpage/g, "\n"); 
                    
-                   resultText = await refactorLatex(contentForAi, userPrompt, activeServerUrl, requestTimeoutMs);
+                   resultText = await refactorLatex(
+                       contentForAi, 
+                       userPrompt, 
+                       activeServerUrl, 
+                       requestTimeoutMs,
+                       abortControllerRef.current.signal
+                   );
                 } catch (err: any) {
+                    if (err.name === 'AbortError' || err.message === 'Aborted') throw err;
+                    
                     console.error(`Page ${i+1} refactor error:`, err);
                     resultText = chunk.content + `\n% Ошибка: ${err.message}`;
                 }
@@ -1430,10 +1468,19 @@ const App: React.FC = () => {
         
         setStatus(AppStatus.SUCCESS);
     } catch (e: any) {
-        console.error(e);
-        setError(e.message);
-        setStatus(AppStatus.ERROR);
-        setEditorContent(originalText);
+        if (e.name === 'AbortError' || e.message === 'Aborted') {
+            setError("Редактирование остановлено пользователем.");
+            setStatus(AppStatus.IDLE);
+            setEditorContent(originalText); // Restore original if cancelled mid-way? Or keep partial?
+            // Actually, for refactor, restoring original is safer as structure might be broken
+        } else {
+            console.error(e);
+            setError(e.message);
+            setStatus(AppStatus.ERROR);
+            setEditorContent(originalText);
+        }
+    } finally {
+        abortControllerRef.current = null;
     }
   };
 
@@ -1713,9 +1760,18 @@ const App: React.FC = () => {
               </div>
             )}
             {status === AppStatus.LOADING && (
-               <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 animate-pulse">
-                <Activity className="w-4 h-4" />
-                Обработка {progress.total > 0 && `(${Math.round(progress.current / progress.total * 100)}%)`}
+               <div className="flex items-center gap-3">
+                 <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 animate-pulse">
+                    <Activity className="w-4 h-4" />
+                    Обработка {progress.total > 0 && `(${Math.round(progress.current / progress.total * 100)}%)`}
+                 </div>
+                 <button 
+                    onClick={handleCancel}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors border border-red-200"
+                 >
+                    <Square className="w-3 h-3 fill-current" />
+                    Стоп
+                 </button>
               </div>
             )}
             {isAnalyzing && (
@@ -2025,6 +2081,14 @@ const App: React.FC = () => {
                             <Clock className="w-3 h-3" />
                             <span>Осталось примерно: {formatTime(progress.etaSeconds)}</span>
                           </div>
+
+                          <button 
+                            onClick={handleCancel}
+                            className="mt-6 flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-sm shadow-lg transition-all active:scale-95"
+                          >
+                             <Square className="w-4 h-4 fill-current" />
+                             Остановить
+                          </button>
                         </div>
                       )}
 
