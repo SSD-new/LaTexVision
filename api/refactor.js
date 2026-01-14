@@ -11,33 +11,28 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { text } = req.body;
+    const { text, prompt } = req.body;
     if (!text) return res.status(400).json({ error: "No text provided" });
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
+    const strictPrompt = `You are a LaTeX expert.
+Rules:
+- Preserve content and order exactly.
+- Do NOT add new content (unless asked).
+- Do NOT remove information.
+- Fix broken line breaks.
+- Output ONLY LaTeX.
+`;
+    
+    const userInstruction = prompt ? `User Instructions:\n${prompt}` : "";
+
+    const fullPrompt = `${strictPrompt}\n\n${userInstruction}\n\nContent to process:\n${text}`;
+
     const response = await ai.models.generateContent({
       model: 'gemini-2.0-flash',
       contents: {
-        parts: [
-          {
-            text: `You are given LaTeX text produced by OCR.
-
-Task:
-- Do NOT add new content
-- Do NOT remove information
-- Do NOT solve or explain
-
-ONLY:
-- Remove duplicated paragraphs
-- Fix broken line breaks
-- Normalize formatting
-
-Output LaTeX only.
-
-${text}`
-          }
-        ]
+        parts: [{ text: fullPrompt }]
       },
       config: {
         temperature: 0.1,
