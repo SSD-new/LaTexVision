@@ -1,172 +1,172 @@
-LaTexVision
+# LaTexVision
 
-LaTexVision is an AI-powered tool that converts images of handwritten or printed mathematical content and text into clean, structured LaTeX code.
+**LaTexVision** — это мощный инструмент на базе Искусственного Интеллекта для конвертации изображений и PDF-документов с рукописным или печатным математическим текстом в чистый, отформатированный LaTeX код.
 
-The project is designed as a hybrid system and can operate both with cloud-based AI services and in a fully offline local mode.
+Проект поддерживает гибридный режим работы:
+1.  **Cloud Mode:** Быстрая работа через Google Gemini API (требует интернет).
+2.  **Local Mode:** Полностью автономная работа через локальную нейросеть Qwen2.5-VL (требует GPU, работает без интернета).
 
---------------------------------------------------
-ARCHITECTURE
---------------------------------------------------
+---
 
-LaTexVision uses a hybrid architecture:
+## 🌟 Возможности
 
-1) Frontend
-   - React
-   - Vite
-   - TailwindCSS
-   Provides a web interface for uploading documents, editing LaTeX, and previewing results.
+*   📄 **Поддержка PDF и изображений:** Обработка многостраничных документов.
+*   📐 **Умная сегментация:** Использование OpenCV для автоматического определения блоков текста и формул.
+*   ✏️ **Ручное редактирование:** Инструменты для удаления артефактов (ластик), разделения колонок и разрезания строк.
+*   👁️ **Live Preview:** Встроенный редактор кода с мгновенным рендерингом LaTeX (KaTeX).
+*   🔒 **Приватность:** Возможность запускать LLM локально на своем оборудовании.
+*   🤖 **AI Рефакторинг:** Возможность попросить ИИ исправить ошибки или изменить стиль уже распознанного текста.
 
-2) Cloud API (optional)
-   - Vercel Serverless Functions
-   - Google Gemini (Flash)
-   Used for fast processing when internet access is available.
+---
 
-3) Local Backend (offline mode)
-   - Python Flask server
-   - Qwen2.5-VL-7B-Instruct
-   Enables private, offline processing without any external network access.
+## 🛠️ Системные требования
 
---------------------------------------------------
-FEATURES
---------------------------------------------------
+### Для Фронтенда (Frontend)
+*   **Node.js:** Версия 18.0 или выше.
+*   **Менеджер пакетов:** npm, yarn или pnpm.
 
-- Multipage PDF support for full document processing
-- Intelligent layout segmentation using OpenCV (client-side via WebAssembly)
-- Hybrid AI processing:
-  - Cloud Mode: Google Gemini for speed and convenience
-  - Offline Mode: Local Qwen2.5-VL model for privacy and offline use
-- Integrated LaTeX editor with live preview (KaTeX)
-- Manual layout tools:
-  - Adjust text blocks
-  - Erase artifacts
-  - Split multi-column layouts
+### Для Локального Бэкенда (Backend)
+*   **OS:** Windows / Linux (с поддержкой CUDA).
+*   **Python:** 3.10+.
+*   **GPU:** NVIDIA GPU с поддержкой CUDA (рекомендуется от 8GB VRAM для 4-битной квантованной модели, 12GB+ для полной производительности).
+*   **RAM:** 16GB+.
 
---------------------------------------------------
-INSTALLATION
---------------------------------------------------
+---
 
---------------------------------------------------
-1) Frontend (Node.js)
---------------------------------------------------
+## 🚀 Установка и Запуск
 
-Requirements:
-- Node.js 18+
+### 1. Фронтенд (Интерфейс)
 
-Installation:
+Клиентская часть написана на React + Vite.
 
-npm install
-npm run dev
+1.  **Клонируйте репозиторий:**
+    ```bash
+    git clone https://github.com/your-repo/latex-vision.git
+    cd latex-vision
+    ```
 
-For cloud-based features (Google Gemini), create a .env.local file:
+2.  **Установите зависимости:**
+    ```bash
+    npm install
+    ```
 
-API_KEY=your_google_gemini_api_key
+3.  **Настройка API ключа (для Cloud режима):**
+    Создайте файл `.env.local` в корне проекта и добавьте ваш ключ от Google Gemini:
+    ```env
+    API_KEY=ваш_ключ_от_google_ai_studio
+    ```
+    *Если вы планируете использовать только локальный сервер, этот шаг можно пропустить.*
 
---------------------------------------------------
-2) Local Backend (Python)
---------------------------------------------------
+4.  **Запуск в режиме разработки:**
+    ```bash
+    npm run dev
+    ```
+    Приложение будет доступно по адресу: `http://localhost:3000`
 
-The local backend is required for Offline Mode.
+---
 
-Requirements:
-- Python 3.10 or newer
-- NVIDIA GPU recommended
-  - 12 GB VRAM or more recommended for the 7B model
-- CUDA Toolkit compatible with your GPU
+### 2. Бэкенд (Локальный сервер Python)
 
-Setup:
+Сервер необходим, если вы хотите работать **без интернета** или использовать модель Qwen2.5-VL локально.
 
-cd backend
-python -m venv venv
+1.  **Перейдите в папку backend:**
+    *(Если папки нет, создайте её и поместите туда файлы `server.txt` (переименуйте в `server.py`) и `requirements.txt`)*.
 
-Windows:
-venv\Scripts\activate
+2.  **Создайте виртуальное окружение (рекомендуется):**
+    ```bash
+    # Windows
+    python -m venv venv
+    venv\Scripts\activate
 
-Linux / macOS:
-source venv/bin/activate
+    # Linux / macOS
+    python3 -m venv venv
+    source venv/bin/activate
+    ```
 
-Install dependencies:
+3.  **Установите PyTorch с поддержкой CUDA:**
+    Посетите [pytorch.org](https://pytorch.org/get-started/locally/) для получения команды под вашу систему. Обычно это выглядит так:
+    ```bash
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+    ```
 
-pip install -r requirements.txt
+4.  **Установите остальные зависимости:**
+    ```bash
+    pip install flask flask-cors Pillow transformers accelerate qwen-vl-utils bitsandbytes
+    ```
 
---------------------------------------------------
-MODEL DOWNLOAD
---------------------------------------------------
+5.  **Загрузка модели (Qwen2.5-VL-7B-Instruct):**
+    Вам необходимо скачать веса модели с Hugging Face. Вы можете сделать это через Python-скрипт или `huggingface-cli`.
 
-LaTexVision does not download large model files automatically at runtime.
+    Пример скрипта для скачивания (`download_model.py`):
+    ```python
+    from huggingface_hub import snapshot_download
+    snapshot_download(repo_id="Qwen/Qwen2.5-VL-7B-Instruct", local_dir="D:/models/Qwen2.5-VL-7B-Instruct")
+    ```
+    *Примечание: Модель весит около 15 ГБ.*
 
-To download the Qwen2.5-VL model, use the provided script:
+6.  **Настройка пути к модели:**
+    Откройте файл `backend/server.py` и найдите строку:
+    ```python
+    MODEL_PATH = r"D:\models\Qwen2.5-VL-7B-Instruct"
+    ```
+    Замените путь на тот, куда вы скачали модель.
 
-python download_model.py
+7.  **Запуск сервера:**
+    ```bash
+    python backend/server.py
+    ```
+    Сервер запустится на порту `5000`.
 
-This script will:
-- Download all required model files from Hugging Face
-- Store them in a local directory on disk
-- Prepare the model for offline use
+---
 
-After downloading, set the MODEL_PATH variable in server.py
-to point to the local model directory.
+## ⚙️ Использование
 
---------------------------------------------------
-FULLY OFFLINE MODE
---------------------------------------------------
+1.  Откройте веб-приложение (`http://localhost:3000`).
+2.  **Для работы через Облако (Gemini):**
+    *   Просто загрузите изображение. Убедитесь, что интернет включен.
+3.  **Для работы Локально (Offline):**
+    *   Нажмите иконку **Настройки** (шестеренка) в шапке сайта.
+    *   Включите переключатель **"Локальный сервер (Offline)"**.
+    *   Убедитесь, что адрес сервера указан верно (по умолчанию `http://localhost:5000`).
+    *   Сохраните настройки.
+4.  Загрузите изображение или PDF.
+5.  Дождитесь сегментации (появятся синие рамки).
+6.  При необходимости используйте инструменты слева (ластик, ножницы) для коррекции разметки.
+7.  Нажмите **"Конвертировать"**.
 
-LaTexVision can run in a fully offline environment.
+---
 
-To enable fully offline mode:
+## ❗ Решение проблем
 
-1) Download the model in advance using:
-   python download_model.py
+### Ошибка "Mixed Content" / "Network Error" при локальном режиме
+Если фронтенд открыт через HTTPS (например, на Vercel), браузер заблокирует запросы к `http://localhost:5000`.
+**Решение:**
+1. Открывайте фронтенд локально через `http://localhost:3000`.
+2. Либо используйте `ngrok` для создания https туннеля к вашему Python серверу:
+   ```bash
+   ngrok http 5000
+   ```
+   И укажите полученный `https` адрес в настройках приложения.
 
-2) Set MODEL_PATH in server.py to the local model directory.
+### Ошибка "CUDA out of memory"
+Если у вас вылетает ошибка памяти видеокарты:
+1. Убедитесь, что в `server.py` включена 4-битная квантование (`load_in_4bit=True`).
+2. Уменьшите разрешение входящих изображений в функции `resize_image` (переменная `MAX_PIXELS`).
+3. Закройте другие приложения, использующие GPU.
 
-3) Ensure the backend uses:
-   - local_files_only=True
-   - No cloud API keys configured
-   - No external inference services enabled
+### OpenCV не загружается
+Фронтенд использует OpenCV.js через CDN. Если у вас нет интернета при запуске фронтенда, скачайте `opencv.js` локально и измените путь в `index.html` и `services/cvWorkerScript.ts`.
 
-4) Start the backend server:
-   python server.py
+---
 
-In this mode:
-- The application will not access the internet
-- No model files will be downloaded at runtime
-- All inference runs locally on your hardware
+## 📜 Структура проекта
 
---------------------------------------------------
-LICENSES AND ATTRIBUTION
---------------------------------------------------
+*   `/src` - Исходный код React приложения.
+    *   `/services` - Логика работы с API и OpenCV.
+    *   `/components` - UI компоненты (Editor, Renderer).
+*   `/backend` - Исходный код Python сервера.
+*   `/api` - Serverless функции для Vercel (прокси для Gemini API).
 
---------------------------------------------------
-Application Code
---------------------------------------------------
+## Лицензия
 
-The source code of LaTexVision is licensed under the MIT License.
-
-See the LICENSE file for full license text.
-
---------------------------------------------------
-Third-Party Models
---------------------------------------------------
-
-This project supports the use of Qwen2.5-VL models developed by the Qwen Team
-(Alibaba Cloud).
-
-Model:
-- Qwen2.5-VL-7B-Instruct
-
-License:
-- Apache License, Version 2.0
-
-Use of the Qwen model is subject to its original license terms.
-The model itself is not redistributed as part of this repository.
-
---------------------------------------------------
-DISCLAIMER
---------------------------------------------------
-
-LaTexVision is provided "as is", without warranty of any kind.
-The authors are not responsible for errors in generated LaTeX output,
-model hallucinations, or formatting inconsistencies.
-
-Users are responsible for reviewing and validating generated content
-before publication or production use.
+MIT. Используйте на свой страх и риск. Модель Qwen2.5-VL распространяется под лицензией Apache 2.0.
