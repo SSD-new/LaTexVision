@@ -19,7 +19,7 @@ from qwen_vl_utils import process_vision_info
 # --------------------
 # CONFIG
 # --------------------
-PORT = 5000
+PORT = 5001
 MODEL_PATH = r"D:\models\Qwen2.5-VL-7B-Instruct"
 
 MAX_PIXELS = 1024 * 1024
@@ -132,14 +132,13 @@ def convert_image():
             "Elements:\n"
             "- plain text\n"
             "- inline formulas ($...$)\n"
-            "- standalone formulas (\\[...\\])\n\n"
+            "- standalone formulas (\$begin:math:display$ \.\.\. \\$end:math:display$)\n\n"
             "Rules:\n"
             "- Preserve content and order exactly\n"
             "- Do NOT invent or solve anything\n"
             "- Output LaTeX only\n"
             "- No document headers or packages"
         )
-
         messages = [{
             "role": "user",
             "content": [
@@ -187,7 +186,7 @@ def convert_image():
 
 
 # --------------------
-# REFACTOR ENDPOINT
+# REFACTOR ENDPOINT (с кастомным промтом)
 # --------------------
 @app.route("/api/refactor", methods=["POST"])
 def refactor_text():
@@ -197,23 +196,28 @@ def refactor_text():
             return jsonify({"error": "No text provided"}), 400
 
         raw_text = data["text"]
+        user_prompt = data.get("prompt", "")  # кастомный промт от пользователя, необязательный
 
-        prompt = (
-            "You are given LaTeX text produced by OCR.\n\n"
-            "Task:\n"
-            "- Do NOT add new content\n"
-            "- Do NOT remove information\n"
-            "- Do NOT solve or explain\n\n"
-            "ONLY:\n"
-            "- Remove duplicated paragraphs\n"
-            "- Fix broken line breaks\n"
-            "- Normalize formatting\n\n"
-            "Output LaTeX only."
+        # Основной строгий промт, который нельзя сломать
+        strict_prompt = (
+            "Вы получили LaTeX текст, сгенерированный из OCR.\n"
+            "Обязательные правила (не изменяйте):\n"
+            "- Сохраняйте порядок и содержание текста полностью.\n"
+            "- Не добавляйте новый контент.\n"
+            "- Не пиши дополнительных ответов пользователю, строго по промту.\n"
+            "- Не удаляйте информацию.\n"
+            "- Сохраняйте язык оригинала, включая старорусские буквы и символы (ъ, i).\n"
+            "- Форматирование LaTeX должно быть корректным.\n"
+            "- Inline формулы остаются $...$, отдельные формулы остаются \\[ ... \\].\n"
+            "- Заголовки и обычный текст сохраняются как есть (\\textbf будет удалено в пост-обработке).\n\n"
+            "Пользовательский запрос:\n"
         )
+
+        full_prompt = strict_prompt + user_prompt + "\n\nТекст для обработки:\n" + raw_text
 
         messages = [{
             "role": "user",
-            "content": [{"type": "text", "text": prompt + "\n\n" + raw_text}],
+            "content": [{"type": "text", "text": full_prompt}],
         }]
 
         text_input = processor.apply_chat_template(
