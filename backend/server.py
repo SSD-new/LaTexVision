@@ -19,7 +19,7 @@ from qwen_vl_utils import process_vision_info
 # --------------------
 # CONFIG
 # --------------------
-PORT = 5001
+PORT = 5000
 MODEL_PATH = r"D:\models\Qwen2.5-VL-7B-Instruct"
 
 MAX_PIXELS = 1024 * 1024
