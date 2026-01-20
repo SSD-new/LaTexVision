@@ -36,8 +36,7 @@ import {
   GripVertical,
   Copy,
   Type,
-  Square,
-  Image as ImageIcon // Alias to avoid conflict with HTML Image
+  Square
 } from 'lucide-react';
 import { convertImageToLatex, refactorLatex } from './services/geminiService';
 import { segmentImage, ImageBlock, BoundingBox, SegmentationConfig, checkOpenCVReady } from './services/layoutService';
@@ -77,7 +76,6 @@ interface PageData {
   columns: ColumnCut[];
   excludedBlockIds: Set<string>;
   config: SegmentationConfig;
-  isProcessed: boolean; // Tracks if OpenCV segmentation has run
 }
 
 interface AppSettings {
@@ -138,21 +136,13 @@ const DraggableMask: React.FC<{
     if (!isDragging) setLocalMask(mask);
   }, [mask, isDragging]);
 
-  const handleMouseDown = (e: React.MouseEvent | React.TouchEvent, type: 'move' | 'resize') => {
+  const handleMouseDown = (e: React.MouseEvent, type: 'move' | 'resize') => {
     if (readOnly) return;
-    // Don't prevent default on touch immediately to allow potential scrolling if not capturing
-    // But here we want to capture drag
-    e.stopPropagation(); 
+    e.preventDefault(); e.stopPropagation();
     setIsDragging(true);
     
-    // Normalize touch/mouse
-    // @ts-ignore
-    const clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
-    // @ts-ignore
-    const clientY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
-
-    const startX = clientX;
-    const startY = clientY;
+    const startX = e.clientX;
+    const startY = e.clientY;
     const initX = localMask.x;
     const initY = localMask.y;
     const initW = localMask.width;
@@ -160,22 +150,16 @@ const DraggableMask: React.FC<{
 
     let pendingUpdate: Partial<EraserMask> | null = null;
 
-    const onMove = (moveEvent: MouseEvent | TouchEvent) => {
-      moveEvent.preventDefault(); // Prevent scrolling while dragging mask
-      const container = document.querySelector('.image-wrapper');
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const container = (e.target as Element).closest('.image-wrapper');
       if (!container) return;
       
       const rect = container.getBoundingClientRect();
       const scaleX = naturalWidth / rect.width;
       const scaleY = naturalHeight / rect.height;
 
-      // @ts-ignore
-      const moveClientX = moveEvent.type.includes('mouse') ? moveEvent.clientX : moveEvent.touches[0].clientX;
-      // @ts-ignore
-      const moveClientY = moveEvent.type.includes('mouse') ? moveEvent.clientY : moveEvent.touches[0].clientY;
-
-      const dx = (moveClientX - startX) * scaleX;
-      const dy = (moveClientY - startY) * scaleY;
+      const dx = (moveEvent.clientX - startX) * scaleX;
+      const dy = (moveEvent.clientY - startY) * scaleY;
 
       if (type === 'move') {
         const nx = Math.max(0, Math.min(naturalWidth - initW, initX + dx));
@@ -190,11 +174,9 @@ const DraggableMask: React.FC<{
       }
     };
 
-    const onEnd = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onEnd);
-      document.removeEventListener('touchmove', onMove);
-      document.removeEventListener('touchend', onEnd);
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
       setIsDragging(false);
       
       if (pendingUpdate) {
@@ -202,10 +184,8 @@ const DraggableMask: React.FC<{
       }
     };
 
-    document.addEventListener('mousemove', onMove, { passive: false });
-    document.addEventListener('mouseup', onEnd);
-    document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('touchend', onEnd);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
   };
 
   const displayW = naturalWidth || 1;
@@ -223,36 +203,16 @@ const DraggableMask: React.FC<{
     >
       {!readOnly && (
         <>
-          {/* Mobile-friendly Move Handle (Large touch target, invisible mostly) */}
-          <div 
-             onMouseDown={(e) => handleMouseDown(e, 'move')} 
-             onTouchStart={(e) => handleMouseDown(e, 'move')}
-             className="absolute inset-0 flex items-center justify-center cursor-move touch-none"
+          <div onMouseDown={(e) => handleMouseDown(e, 'move')} className="absolute inset-0 cursor-move flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/5">
+            <Move className="w-5 h-5 text-white drop-shadow-md" />
+          </div>
+          <button 
+            onClick={(e) => { e.stopPropagation(); onDelete(mask.id); }} 
+            className="absolute -top-3 -right-3 w-7 h-7 bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg pointer-events-auto hover:scale-110 transition-transform"
           >
-             {/* Visual indicator on hover/active */}
-             <div className="bg-black/10 w-full h-full opacity-0 group-hover:opacity-100 flex items-center justify-center">
-                 <Move className="w-6 h-6 text-white drop-shadow-md" />
-             </div>
-          </div>
-
-          {/* Delete Button - Increased touch target */}
-          <div className="absolute -top-3 -right-3 w-10 h-10 flex items-center justify-center z-50">
-             <button 
-                onClick={(e) => { e.stopPropagation(); onDelete(mask.id); }} 
-                className="w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-          </div>
-
-          {/* Resize Handle - Bottom Right */}
-          <div 
-             onMouseDown={(e) => handleMouseDown(e, 'resize')} 
-             onTouchStart={(e) => handleMouseDown(e, 'resize')}
-             className="absolute -bottom-2 -right-2 w-8 h-8 flex items-center justify-center cursor-nwse-resize z-40 touch-none"
-          >
-             <div className="w-4 h-4 bg-red-600 rounded-sm shadow-sm" />
-          </div>
+            <X className="w-4 h-4" />
+          </button>
+          <div onMouseDown={(e) => handleMouseDown(e, 'resize')} className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize bg-red-600 rounded-tl-lg" />
         </>
       )}
     </div>
@@ -279,46 +239,36 @@ const DraggableCut: React.FC<{
   const leftX = cut.colIdx === 0 ? 0 : sortedVCuts[cut.colIdx - 1];
   const rightX = cut.colIdx >= sortedVCuts.length ? naturalWidth : sortedVCuts[cut.colIdx];
 
-  const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
+  const handleMouseDown = (e: React.MouseEvent) => {
     if (readOnly) return;
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     setIsDragging(true);
-    
-    // @ts-ignore
-    const clientY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
-    const startY = clientY;
+    const startY = e.clientY;
     const initY = localY;
     
     let pendingY = initY;
 
-    const onMove = (moveEvent: MouseEvent | TouchEvent) => {
-      moveEvent.preventDefault();
-      const container = document.querySelector('.image-wrapper');
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const container = (e.target as Element).closest('.image-wrapper');
       if (!container) return;
 
       const rect = container.getBoundingClientRect();
       const scaleY = naturalHeight / rect.height;
-      // @ts-ignore
-      const moveClientY = moveEvent.type.includes('mouse') ? moveEvent.clientY : moveEvent.touches[0].clientY;
-      const dy = (moveClientY - startY) * scaleY;
+      const dy = (moveEvent.clientY - startY) * scaleY;
       
       pendingY = Math.max(0, Math.min(naturalHeight, initY + dy));
       setLocalY(pendingY);
     };
 
-    const onEnd = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onEnd);
-      document.removeEventListener('touchmove', onMove);
-      document.removeEventListener('touchend', onEnd);
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
       setIsDragging(false);
       onUpdate(cut.id, pendingY);
     };
 
-    document.addEventListener('mousemove', onMove, { passive: false });
-    document.addEventListener('mouseup', onEnd);
-    document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('touchend', onEnd);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
   };
 
   const displayW = naturalWidth || 1;
@@ -335,29 +285,21 @@ const DraggableCut: React.FC<{
     >
       {!readOnly && (
         <>
-          {/* Handle - Large touch target */}
           <div 
             onMouseDown={handleMouseDown}
-            onTouchStart={handleMouseDown}
-            className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-10 flex items-center justify-center cursor-ns-resize touch-none z-50"
+            className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-xl cursor-ns-resize opacity-0 group-hover:opacity-100 transition-opacity"
           >
-             <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-xl">
-               <Scissors className="w-4 h-4" />
-             </div>
+            <Scissors className="w-4 h-4" />
           </div>
-          
-          <div className="absolute left-0 -top-4 text-[8px] font-black text-indigo-600 bg-white px-1 rounded shadow-sm opacity-60 group-hover:opacity-100 pointer-events-none">
+          <div className="absolute left-0 -top-4 text-[8px] font-black text-indigo-600 bg-white px-1 rounded shadow-sm opacity-0 group-hover:opacity-100 pointer-events-none">
             КОЛ {cut.colIdx + 1}
           </div>
-          
-          <div className="absolute right-0 -translate-y-1/2 translate-x-1/2 w-10 h-10 flex items-center justify-center z-50">
-             <button 
-                onClick={(e) => { e.stopPropagation(); onDelete(cut.id); }}
-                className="w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110"
-              >
-                <X className="w-3 h-3" />
-              </button>
-          </div>
+          <button 
+            onClick={(e) => { e.stopPropagation(); onDelete(cut.id); }}
+            className="absolute right-0 -translate-y-1/2 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-opacity translate-x-1/2 hover:scale-110"
+          >
+            <X className="w-3 h-3" />
+          </button>
         </>
       )}
     </div>
@@ -378,46 +320,36 @@ const DraggableColumn: React.FC<{
     if (!isDragging) setLocalX(col.x);
   }, [col.x, isDragging]);
 
-  const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
+  const handleMouseDown = (e: React.MouseEvent) => {
     if (readOnly) return;
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     setIsDragging(true);
-    
-    // @ts-ignore
-    const clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
-    const startX = clientX;
+    const startX = e.clientX;
     const initX = localX;
     
     let pendingX = initX;
 
-    const onMove = (moveEvent: MouseEvent | TouchEvent) => {
-      moveEvent.preventDefault();
-      const container = document.querySelector('.image-wrapper');
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const container = (e.target as Element).closest('.image-wrapper');
       if (!container) return;
 
       const rect = container.getBoundingClientRect();
       const scaleX = naturalWidth / rect.width;
-      // @ts-ignore
-      const moveClientX = moveEvent.type.includes('mouse') ? moveEvent.clientX : moveEvent.touches[0].clientX;
-      const dx = (moveClientX - startX) * scaleX;
+      const dx = (moveEvent.clientX - startX) * scaleX;
       
       pendingX = Math.max(0, Math.min(naturalWidth, initX + dx));
       setLocalX(pendingX);
     };
 
-    const onEnd = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onEnd);
-      document.removeEventListener('touchmove', onMove);
-      document.removeEventListener('touchend', onEnd);
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
       setIsDragging(false);
       onUpdate(col.id, pendingX);
     };
 
-    document.addEventListener('mousemove', onMove, { passive: false });
-    document.addEventListener('mouseup', onEnd);
-    document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('touchend', onEnd);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
   };
 
   const displayW = naturalWidth || 1;
@@ -431,22 +363,16 @@ const DraggableColumn: React.FC<{
         <>
           <div 
             onMouseDown={handleMouseDown}
-            onTouchStart={handleMouseDown}
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-10 flex items-center justify-center cursor-ew-resize touch-none z-50"
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-xl cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity"
           >
-            <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-xl">
-               <ColumnsIcon className="w-4 h-4" />
-            </div>
+            <ColumnsIcon className="w-4 h-4" />
           </div>
-          
-          <div className="absolute top-4 -translate-x-1/2 w-10 h-10 flex items-center justify-center z-50">
-             <button 
-                onClick={(e) => { e.stopPropagation(); onDelete(col.id); }}
-                className="w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110"
-              >
-                <X className="w-3 h-3" />
-              </button>
-          </div>
+          <button 
+            onClick={(e) => { e.stopPropagation(); onDelete(col.id); }}
+            className="absolute top-4 -translate-x-1/2 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-opacity hover:scale-110"
+          >
+            <X className="w-3 h-3" />
+          </button>
         </>
       )}
     </div>
@@ -504,7 +430,7 @@ const PaginationBar: React.FC<{
   onPrev: () => void;
   className?: string;
 }> = ({ current, total, onNext, onPrev, className }) => (
-   <div className={`h-12 sm:h-14 bg-white/95 backdrop-blur rounded-2xl border border-slate-200 shadow-xl flex items-center justify-center gap-4 sm:gap-6 z-50 px-2 ${className}`}>
+   <div className={`h-14 bg-white rounded-2xl border border-slate-200 shadow-xl flex items-center justify-center gap-6 z-50 ${className}`}>
       <button 
         disabled={current === 0}
         onClick={onPrev}
@@ -512,8 +438,8 @@ const PaginationBar: React.FC<{
       >
         <ChevronLeft className="w-5 h-5 text-slate-800" />
       </button>
-      <span className="text-xs sm:text-sm font-black text-slate-900 tracking-wide whitespace-nowrap">
-        {current + 1} / {total}
+      <span className="text-sm font-black text-slate-900 tracking-wide">
+        СТРАНИЦА {current + 1} из {total}
       </span>
       <button 
         disabled={current === total - 1}
@@ -549,7 +475,7 @@ const SettingsModal: React.FC<{
             <Settings2 className="w-5 h-5 text-indigo-600" />
             Настройки
           </h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-500">
+          <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full text-slate-500">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -560,10 +486,10 @@ const SettingsModal: React.FC<{
                 <div>
                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                      {localSettings.useLocalServer ? <WifiOff className="w-4 h-4 text-orange-500" /> : <Wifi className="w-4 h-4 text-green-500" />}
-                     Локальный сервер
+                     Локальный сервер (Offline)
                    </h4>
                    <p className="text-xs text-slate-500 mt-1 max-w-[280px] leading-relaxed">
-                     Используйте свой сервер в локальной сети.
+                     Используйте свой сервер в локальной сети, если пропал интернет.
                    </p>
                 </div>
                 <div 
@@ -585,7 +511,7 @@ const SettingsModal: React.FC<{
                         value={localSettings.localServerUrl}
                         onChange={(e) => setLocalSettings(s => ({...s, localServerUrl: e.target.value}))}
                         placeholder="http://192.168.1.XX:5000"
-                        className="w-full pl-9 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
+                        className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
                       />
                     </div>
                   </div>
@@ -607,6 +533,9 @@ const SettingsModal: React.FC<{
                       onChange={(e) => setLocalSettings(s => ({...s, requestTimeout: Number(e.target.value)}))}
                       className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 block"
                     />
+                    <p className="text-[10px] text-slate-400">
+                      Увеличьте значение (до 20 мин), если сервер обрабатывает очень большие блоки.
+                    </p>
                   </div>
                </div>
              )}
@@ -616,7 +545,7 @@ const SettingsModal: React.FC<{
         <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
            <button 
              onClick={() => onSave(localSettings)}
-             className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-md transition-all active:scale-95 w-full justify-center sm:w-auto"
+             className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-md transition-all active:scale-95"
            >
              <Save className="w-4 h-4" />
              Сохранить
@@ -648,18 +577,21 @@ const RefactorModal: React.FC<{
             <Sparkles className="w-5 h-5 text-purple-600" />
             ИИ Редактирование
           </h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-500">
+          <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full text-slate-500">
             <X className="w-5 h-5" />
           </button>
         </div>
         
         <div className="p-6 space-y-4">
+           <div className="p-3 bg-purple-50 text-purple-800 text-xs font-medium rounded-lg border border-purple-100">
+              Здесь можно задать дополнительные инструкции для обработки текста.
+           </div>
            <div className="space-y-2">
-             <label className="text-xs font-bold text-slate-600 uppercase">Пользовательский промт</label>
+             <label className="text-xs font-bold text-slate-600 uppercase">Пользовательский промт (необязательно)</label>
              <textarea 
                value={prompt}
                onChange={(e) => setPrompt(e.target.value)}
-               placeholder="Например: Исправь опечатки..."
+               placeholder="Например: Исправь опечатки, убери лишние пробелы..."
                className="w-full h-32 p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 outline-none resize-none placeholder:text-slate-400"
              />
            </div>
@@ -668,13 +600,13 @@ const RefactorModal: React.FC<{
         <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
            <button 
              onClick={onClose}
-             className="px-4 py-3 text-slate-600 font-bold text-sm hover:bg-slate-200 rounded-xl transition-colors flex-1"
+             className="px-4 py-2 text-slate-600 font-bold text-sm hover:bg-slate-200 rounded-xl transition-colors"
            >
              Отмена
            </button>
            <button 
              onClick={() => onConfirm(prompt)}
-             className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-sm shadow-md transition-all active:scale-95"
+             className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-sm shadow-md transition-all active:scale-95"
            >
              <Play className="w-3.5 h-3.5 fill-current" />
              Запустить
@@ -698,7 +630,8 @@ const App: React.FC = () => {
 
   const [showDebug, setShowDebug] = useState(false);
   
-  // GLOBAL EDITOR STATE
+  // GLOBAL EDITOR STATE - The "Mansion"
+  // It contains ALL latex for ALL pages combined.
   const [editorContent, setEditorContent] = useState<string>('');
   
   const [copied, setCopied] = useState(false);
@@ -712,12 +645,9 @@ const App: React.FC = () => {
 
   // View Mode State: 'default' (Generator) or 'editor' (Full Editor)
   const [viewMode, setViewMode] = useState<'default' | 'editor'>('default');
-  
-  // Mobile Tab State
-  const [mobileTab, setMobileTab] = useState<'tools' | 'image' | 'code'>('image');
 
-  // SPLIT PANE RESIZING STATE
-  const [editorSplitPos, setEditorSplitPos] = useState(50);
+  // SPLIT PANE RESIZING STATE (Overleaf Style)
+  const [editorSplitPos, setEditorSplitPos] = useState(50); // percentage 
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
   const splitContainerRef = useRef<HTMLDivElement>(null);
 
@@ -732,11 +662,14 @@ const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   
+  // Ref for CodeMirror View to handle scrolling
   const editorViewRef = useRef<EditorView | null>(null);
+  
   const previewContainerRef = useRef<HTMLDivElement>(null);
 
   const currentPage = pages[currentPageIndex] || null;
 
+  // --- Cancel Controller ---
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // --- Autoscaling Logic for Paper ---
@@ -745,8 +678,12 @@ const App: React.FC = () => {
 
   useLayoutEffect(() => {
     if (paperContentRef.current) {
+        // Measure natural height
         const contentHeight = paperContentRef.current.scrollHeight;
-        const A4_HEIGHT_PX = 1123; 
+        const A4_HEIGHT_PX = 1123; // approx 297mm at 96dpi
+        
+        // If content overflows A4 height, try to scale it down to fit single page,
+        // but cap the scaling at 0.85 to prevent text becoming too small.
         if (contentHeight > A4_HEIGHT_PX) {
             const fitScale = A4_HEIGHT_PX / contentHeight;
             setPaperScale(Math.max(0.85, fitScale));
@@ -775,6 +712,7 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // --- SPLIT DRAGGING LOGIC ---
   const handleSplitMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     setIsDraggingSplit(true);
@@ -787,6 +725,7 @@ const App: React.FC = () => {
       if (splitContainerRef.current) {
         const rect = splitContainerRef.current.getBoundingClientRect();
         const newWidth = ((e.clientX - rect.left) / rect.width) * 100;
+        // Clamp between 20% and 80% to preserve visibility
         const clamped = Math.max(20, Math.min(80, newWidth));
         setEditorSplitPos(clamped);
       }
@@ -806,8 +745,10 @@ const App: React.FC = () => {
   }, [isDraggingSplit]);
 
 
+  // --- AUTO-SCROLL EDITOR ON FLIP OR GENERATION ---
   useEffect(() => {
     if (editorViewRef.current && status === AppStatus.LOADING) {
+       // Scroll to bottom during generation
        const docLength = editorViewRef.current.state.doc.length;
        editorViewRef.current.dispatch({
          effects: EditorView.scrollIntoView(docLength)
@@ -815,11 +756,14 @@ const App: React.FC = () => {
     }
   }, [status, editorContent]);
 
+  // --- SYNC SCROLL ON PAGE FLIP (IF NOT LOADING) ---
   useEffect(() => {
     if (editorViewRef.current && editorContent && status !== AppStatus.LOADING) {
       const marker = `${PAGE_MARKER_PREFIX} ${currentPageIndex + 1}`;
       const index = editorContent.indexOf(marker);
       if (index !== -1) {
+         // Scroll to specific marker
+         // EditorView expects a position in the document
          editorViewRef.current.dispatch({
            effects: EditorView.scrollIntoView(index, { y: "start" })
          });
@@ -827,21 +771,32 @@ const App: React.FC = () => {
     }
   }, [currentPageIndex, status]);
 
+  // --- RESET PREVIEW SCROLL ON FLIP ---
   useEffect(() => {
     if (previewContainerRef.current) {
         previewContainerRef.current.scrollTop = 0;
     }
   }, [currentPageIndex]);
 
+  // --- HELPERS FOR PAGE CONTENT EXTRACTION ---
+  
+  // Extracts only the content for the current page to feed the RENDERER
   const getCurrentPageRendererContent = () => {
     if (!editorContent) return "";
+    
+    // Split by markers using the flexible regex
+    // We expect format: ... % --- СТРАНИЦА 1 --- ... % --- СТРАНИЦА 2 --- ...
     const parts = editorContent.split(new RegExp(PAGE_MARKER_REGEX_SOURCE, 'i'));
+    
+    // parts[0] is usually preamble or empty.
+    // parts[1] corresponds to Page 1, parts[2] to Page 2, etc.
     const pageIndexShifted = currentPageIndex + 1;
     
     if (parts.length > pageIndexShifted) {
        return parts[pageIndexShifted];
     }
     
+    // Fallback: if markers are broken/missing, show full content to avoid showing nothing
     if (parts.length > 1) {
         return "";
     }
@@ -863,8 +818,15 @@ const App: React.FC = () => {
   const changePageInEditMode = (direction: 'next' | 'prev') => {
     const newIndex = direction === 'next' ? currentPageIndex + 1 : currentPageIndex - 1;
     if (newIndex < 0 || newIndex >= pages.length) return;
+
+    // "Commit" changes for the current page by just moving on (snapshot is discarded)
     editSnapshotRef.current = null;
+
+    // Switch index
     setCurrentPageIndex(newIndex);
+    
+    // Create snapshot for the new page immediately so 'Cancel' works for the new page
+    // Note: We use the 'pages' from the current closure which has the data for the new page
     const newPage = pages[newIndex];
     editSnapshotRef.current = {
       masks: [...newPage.masks],
@@ -899,7 +861,7 @@ const App: React.FC = () => {
     if (!cvReady) return;
     
     setIsAnalyzing(true);
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     const tempImg = new Image();
     tempImg.src = imageData;
@@ -916,7 +878,7 @@ const App: React.FC = () => {
       setPages(prev => {
         if (!prev[pageIdx]) return prev;
         const next = [...prev];
-        next[pageIdx] = { ...next[pageIdx], blocks: b, isProcessed: true };
+        next[pageIdx] = { ...next[pageIdx], blocks: b };
         return next;
       });
     } catch (err: any) {
@@ -929,30 +891,36 @@ const App: React.FC = () => {
 
   // Main Detection Effect
   useEffect(() => {
-    if (isEditMode || !cvReady || isAnalyzing) return;
-    if (pages[currentPageIndex] && !pages[currentPageIndex].isProcessed) {
+    if (isEditMode) return;
+
+    // Trigger detection if currentPage and cvReady are available.
+    // We also include viewMode in dependency to force check/re-run when switching back to default.
+    // But we safeguard logic to only run if we have data.
+    if (currentPage && cvReady && viewMode === 'default') {
+      const timer = setTimeout(() => {
         detectLines(
-            currentPageIndex, 
-            pages[currentPageIndex].config, 
-            pages[currentPageIndex].image, 
-            pages[currentPageIndex].masks, 
-            pages[currentPageIndex].cuts, 
-            pages[currentPageIndex].columns
+          currentPageIndex, 
+          currentPage.config, 
+          currentPage.image, 
+          currentPage.masks, 
+          currentPage.cuts, 
+          currentPage.columns
         );
-        return;
+      }, 500); 
+      return () => clearTimeout(timer);
     }
-    const nextUnprocessedIndex = pages.findIndex(p => !p.isProcessed);
-    if (nextUnprocessedIndex !== -1) {
-         detectLines(
-            nextUnprocessedIndex, 
-            pages[nextUnprocessedIndex].config, 
-            pages[nextUnprocessedIndex].image, 
-            pages[nextUnprocessedIndex].masks, 
-            pages[nextUnprocessedIndex].cuts, 
-            pages[nextUnprocessedIndex].columns
-        );
-    }
-  }, [currentPageIndex, pages, cvReady, detectLines, isEditMode, isAnalyzing]);
+  }, [
+    currentPageIndex, 
+    currentPage?.config, 
+    currentPage?.masks, 
+    currentPage?.cuts, 
+    currentPage?.columns, 
+    currentPage?.image, 
+    cvReady, 
+    detectLines,
+    isEditMode,
+    viewMode // Added viewMode dependency
+  ]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -997,8 +965,7 @@ const App: React.FC = () => {
               cuts: [],
               columns: [],
               excludedBlockIds: new Set(),
-              config: { ...DEFAULT_CONFIG, kernelH: defaultKernelH },
-              isProcessed: false
+              config: { ...DEFAULT_CONFIG, kernelH: defaultKernelH }
             });
           }
         } else {
@@ -1024,8 +991,7 @@ const App: React.FC = () => {
             cuts: [],
             columns: [],
             excludedBlockIds: new Set(),
-            config: { ...DEFAULT_CONFIG, kernelH: defaultKernelH },
-            isProcessed: false
+            config: { ...DEFAULT_CONFIG, kernelH: defaultKernelH }
           });
         }
 
@@ -1046,8 +1012,7 @@ const App: React.FC = () => {
       if (next[currentPageIndex]) {
         next[currentPageIndex] = {
           ...next[currentPageIndex],
-          config: { ...next[currentPageIndex].config, ...updates },
-          isProcessed: false // Invalidate processing
+          config: { ...next[currentPageIndex].config, ...updates }
         };
       }
       return next;
@@ -1112,8 +1077,7 @@ const App: React.FC = () => {
       const next = [...prev];
       next[currentPageIndex] = {
         ...next[currentPageIndex],
-        masks: next[currentPageIndex].masks.map(m => m.id === id ? { ...m, ...updates } : m),
-        isProcessed: false
+        masks: next[currentPageIndex].masks.map(m => m.id === id ? { ...m, ...updates } : m)
       };
       return next;
     });
@@ -1122,11 +1086,7 @@ const App: React.FC = () => {
   const deleteMask = (id: string) => {
     setPages(prev => {
       const next = [...prev];
-      next[currentPageIndex] = {
-        ...next[currentPageIndex],
-        masks: next[currentPageIndex].masks.filter(m => m.id !== id),
-        isProcessed: false
-      };
+      next[currentPageIndex].masks = next[currentPageIndex].masks.filter(m => m.id !== id);
       return next;
     });
   };
@@ -1136,8 +1096,7 @@ const App: React.FC = () => {
       const next = [...prev];
       next[currentPageIndex] = {
         ...next[currentPageIndex],
-        cuts: next[currentPageIndex].cuts.map(c => c.id === id ? { ...c, y } : c),
-        isProcessed: false
+        cuts: next[currentPageIndex].cuts.map(c => c.id === id ? { ...c, y } : c)
       };
       return next;
     });
@@ -1146,11 +1105,7 @@ const App: React.FC = () => {
   const deleteCut = (id: string) => {
     setPages(prev => {
       const next = [...prev];
-      next[currentPageIndex] = {
-        ...next[currentPageIndex],
-        cuts: next[currentPageIndex].cuts.filter(c => c.id !== id),
-        isProcessed: false
-      };
+      next[currentPageIndex].cuts = next[currentPageIndex].cuts.filter(c => c.id !== id);
       return next;
     });
   };
@@ -1160,8 +1115,7 @@ const App: React.FC = () => {
       const next = [...prev];
       next[currentPageIndex] = {
         ...next[currentPageIndex],
-        columns: next[currentPageIndex].columns.map(c => c.id === id ? { ...c, x } : c),
-        isProcessed: false
+        columns: next[currentPageIndex].columns.map(c => c.id === id ? { ...c, x } : c)
       };
       return next;
     });
@@ -1170,11 +1124,7 @@ const App: React.FC = () => {
   const deleteColumn = (id: string) => {
     setPages(prev => {
       const next = [...prev];
-      next[currentPageIndex] = {
-        ...next[currentPageIndex],
-        columns: next[currentPageIndex].columns.filter(c => c.id !== id),
-        isProcessed: false
-      };
+      next[currentPageIndex].columns = next[currentPageIndex].columns.filter(c => c.id !== id);
       return next;
     });
   };
@@ -1193,11 +1143,7 @@ const App: React.FC = () => {
     };
     setPages(prev => {
       const next = [...prev];
-      next[currentPageIndex] = { 
-          ...next[currentPageIndex], 
-          masks: [...next[currentPageIndex].masks, newMask],
-          isProcessed: false
-      };
+      next[currentPageIndex] = { ...next[currentPageIndex], masks: [...next[currentPageIndex].masks, newMask] };
       return next;
     });
   };
@@ -1214,11 +1160,7 @@ const App: React.FC = () => {
     };
     setPages(prev => {
       const next = [...prev];
-      next[currentPageIndex] = { 
-          ...next[currentPageIndex], 
-          cuts: [...next[currentPageIndex].cuts, newCut],
-          isProcessed: false
-      };
+      next[currentPageIndex] = { ...next[currentPageIndex], cuts: [...next[currentPageIndex].cuts, newCut] };
       return next;
     });
     setShowCutMenu(false);
@@ -1235,14 +1177,12 @@ const App: React.FC = () => {
     };
     setPages(prev => {
       const next = [...prev];
-      next[currentPageIndex] = { 
-          ...next[currentPageIndex], 
-          columns: [...next[currentPageIndex].columns, newCol],
-          isProcessed: false
-      };
+      next[currentPageIndex] = { ...next[currentPageIndex], columns: [...next[currentPageIndex].columns, newCol] };
       return next;
     });
   };
+
+  // --- Rendering Helpers ---
 
   const formatTime = (seconds: number) => {
     if (!seconds || seconds < 0) return "...";
@@ -1253,9 +1193,9 @@ const App: React.FC = () => {
   };
 
   const handleConvertAll = async () => {
-    setMobileTab('code');
     setStatus(AppStatus.LOADING);
     
+    // Create new abort controller
     abortControllerRef.current = new AbortController();
 
     const pagesWithActualBlocks = pages.map(p => ({
@@ -1271,6 +1211,8 @@ const App: React.FC = () => {
       return;
     }
 
+    // --- STEP 1: INITIALIZE STREAMING VIEW ---
+    // Clear old content immediately and set the structure.
     const initialContent = LATEX_PREAMBLE + "\n\n\\begin{document}\n\n\\end{document}";
     setEditorContent(initialContent);
 
@@ -1283,11 +1225,14 @@ const App: React.FC = () => {
 
     const activeServerUrl = settings.useLocalServer ? settings.localServerUrl : undefined;
     const requestTimeoutMs = (settings.requestTimeout || 300) * 1000;
+
+    // We build an array of content strings, one per page
     const pageResults = new Array(pagesWithActualBlocks.length).fill("");
 
     try {
       for (let pIdx = 0; pIdx < pagesWithActualBlocks.length; pIdx++) {
         const page = pagesWithActualBlocks[pIdx];
+        
         let pageContent = "";
         const avgH = page.activeBlocks.length > 0 
           ? page.activeBlocks.reduce((acc, b) => acc + b.height, 0) / page.activeBlocks.length 
@@ -1310,6 +1255,7 @@ const App: React.FC = () => {
         for (let bIdx = 0; bIdx < page.activeBlocks.length; bIdx++) {
           const block = page.activeBlocks[bIdx];
           const base64Data = block.dataUrl.split(',')[1];
+
           let cleanPart = "";
           
           try {
@@ -1323,7 +1269,7 @@ const App: React.FC = () => {
              );
           } catch (err: any) {
              if (err.name === 'AbortError' || err.message === 'Aborted') {
-                 throw err; 
+                 throw err; // Stop the loop on cancel
              }
              console.error(`Block processing failed:`, err);
              if (err.message.includes("Превышено время")) {
@@ -1337,6 +1283,7 @@ const App: React.FC = () => {
               const prevBlock = page.activeBlocks[bIdx - 1];
               const currentCol = getCol(block.x, block.width);
               const prevCol = getCol(prevBlock.x, prevBlock.width);
+
               if (currentCol !== prevCol) {
                 pageContent += "\n\n";
               } else {
@@ -1348,6 +1295,7 @@ const App: React.FC = () => {
           }
 
           processedCount++;
+          
           const now = Date.now();
           if (processedCount === 1 || now - lastEtaUpdate > 1000) {
              const elapsed = now - startTime;
@@ -1358,18 +1306,30 @@ const App: React.FC = () => {
           }
 
           setProgress({ current: processedCount, total: totalBlocksToProcess, etaSeconds: currentEta });
+          
+          // --- STEP 2: STREAM TO EDITOR ---
+          // Update the specific page content in our buffer
           pageResults[pIdx] = pageContent;
           
+          // Rebuild the full document string dynamically
           let liveFullLatex = LATEX_PREAMBLE + "\n\n\\begin{document}\n";
+          
           pageResults.forEach((content, idx) => {
+              // Only add page marker if we have actually started processing this page or previous pages exist
               if (idx <= pIdx) {
                   liveFullLatex += `\n${PAGE_MARKER_PREFIX} ${idx + 1} ---\n`;
+                  if (numColumns > 1 && idx === pIdx && !content.endsWith('\\end{multicols}')) {
+                      // Temporarily close multicol for valid rendering during streaming if needed, 
+                      // but here we just dump text.
+                  }
                   liveFullLatex += content;
+                  
                   if (idx < pageResults.length - 1 && idx < pIdx) {
                       liveFullLatex += "\n\\newpage";
                   }
               }
           });
+
           liveFullLatex += "\n\n\\end{document}";
           setEditorContent(liveFullLatex);
 
@@ -1379,10 +1339,12 @@ const App: React.FC = () => {
 
         if (numColumns > 1) {
           pageContent += `\n\\end{multicols}`;
+          // Final update for the page to close tags properly
           pageResults[pIdx] = pageContent;
         }
       }
       
+      // Final pass to ensure everything is clean
       let finalFullLatex = LATEX_PREAMBLE + "\n\n\\begin{document}\n";
       pageResults.forEach((content, idx) => {
          finalFullLatex += `\n${PAGE_MARKER_PREFIX} ${idx + 1} ---\n`;
@@ -1393,6 +1355,7 @@ const App: React.FC = () => {
       });
       finalFullLatex += "\n\n\\end{document}";
       setEditorContent(finalFullLatex);
+
       setStatus(AppStatus.SUCCESS);
     } catch (err: any) {
       if (err.name === 'AbortError' || err.message === 'Aborted') {
@@ -1412,8 +1375,10 @@ const App: React.FC = () => {
 
     setStatus(AppStatus.LOADING);
     abortControllerRef.current = new AbortController();
+
     const originalText = editorContent;
 
+    // 1. Basic parsing to get body
     const docStartRegex = /\\begin\{document\}/;
     const docEndRegex = /\\end\{document\}/;
     const startMatch = originalText.match(docStartRegex);
@@ -1430,8 +1395,15 @@ const App: React.FC = () => {
     const bodyRaw = originalText.substring(startMatch.index! + startMatch[0].length, endMatch.index!);
     const postscript = originalText.substring(endMatch.index!);
 
+    // 2. Split into pages using markers
+    // Using capturing group to keep markers in the array
     const parts = bodyRaw.split(new RegExp(`(${PAGE_MARKER_REGEX_SOURCE})`, 'i'));
-    interface PageChunk { marker: string; content: string; }
+
+    interface PageChunk {
+        marker: string;
+        content: string;
+    }
+
     const chunks: PageChunk[] = [];
     let currentMarker = "";
     
@@ -1449,10 +1421,12 @@ const App: React.FC = () => {
         chunks.push({ marker: "", content: bodyRaw });
     }
 
+    // 3. Process loop
     const activeServerUrl = settings.useLocalServer ? settings.localServerUrl : undefined;
     const requestTimeoutMs = (settings.requestTimeout || 300) * 1000;
     
     setEditorContent(preamble + "\n% Обработка документа по страницам...\n" + postscript);
+    
     const refinedChunks: string[] = [];
     setProgress({ current: 0, total: chunks.length, etaSeconds: 0 });
 
@@ -1460,11 +1434,14 @@ const App: React.FC = () => {
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
             let resultText = chunk.content;
+            
             const cleanContent = chunk.content.replace(/\\newpage/g, "").trim();
             
             if (cleanContent.length > 5) {
                 try {
+                   // Remove \newpage for the AI context
                    const contentForAi = chunk.content.replace(/\\newpage/g, "\n"); 
+                   
                    resultText = await refactorLatex(
                        contentForAi, 
                        userPrompt, 
@@ -1474,22 +1451,28 @@ const App: React.FC = () => {
                    );
                 } catch (err: any) {
                     if (err.name === 'AbortError' || err.message === 'Aborted') throw err;
+                    
                     console.error(`Page ${i+1} refactor error:`, err);
                     resultText = chunk.content + `\n% Ошибка: ${err.message}`;
                 }
             }
+
             refinedChunks.push(`${chunk.marker}\n${resultText}`);
             setProgress({ current: i + 1, total: chunks.length, etaSeconds: 0 });
+            
             const currentBody = refinedChunks.join("\n\n\\newpage\n\n");
             setEditorContent(preamble + "\n" + currentBody + "\n" + postscript);
+            
             await new Promise(r => setTimeout(r, 100));
         }
+        
         setStatus(AppStatus.SUCCESS);
     } catch (e: any) {
         if (e.name === 'AbortError' || e.message === 'Aborted') {
             setError("Редактирование остановлено пользователем.");
             setStatus(AppStatus.IDLE);
-            setEditorContent(originalText); 
+            setEditorContent(originalText); // Restore original if cancelled mid-way? Or keep partial?
+            // Actually, for refactor, restoring original is safer as structure might be broken
         } else {
             console.error(e);
             setError(e.message);
@@ -1527,10 +1510,10 @@ const App: React.FC = () => {
         {!isEditMode && (
           <button 
             onClick={(e) => { e.stopPropagation(); toggleBlockExclusion(b.id); }}
-            onTouchStart={(e) => { e.stopPropagation(); toggleBlockExclusion(b.id); }}
-            className={`absolute -top-3 -right-3 w-6 h-6 rounded-full flex items-center justify-center shadow-md transition-colors pointer-events-auto z-20 ${isExcluded ? 'bg-slate-400 text-white' : 'bg-red-500 text-white hover:bg-red-600'}`}
+            className={`absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center shadow-md transition-colors pointer-events-auto z-20 ${isExcluded ? 'bg-slate-400 text-white' : 'bg-red-500 text-white hover:bg-red-600'}`}
+            title={isExcluded ? "Вернуть блок" : "Исключить блок"}
           >
-            {isExcluded ? <RefreshCcw className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+            {isExcluded ? <RefreshCcw className="w-3 h-3" /> : <X className="w-3 h-3" />}
           </button>
         )}
       </div>
@@ -1558,14 +1541,18 @@ const App: React.FC = () => {
   };
 
   const handleCompile = () => {
-      // Force update
+      // Force update implied by state change
   };
 
   const columnCount = currentPage ? currentPage.columns.length + 1 : 0;
+  
   const maxKernelW = currentPage ? Math.max(100, Math.ceil(currentPage.width * 0.2)) : 100;
   const maxKernelH = currentPage ? Math.max(100, Math.ceil(currentPage.height * 0.2)) : 100;
+
+  // The content sent to the renderer is determined by the current page index
   const rendererContent = getCurrentPageRendererContent();
 
+  // --- Overleaf-ish Theme for CodeMirror ---
   const overleafTheme = useMemo(() => EditorView.theme({
     "&": {
       fontSize: `${editorFontSize}px`,
@@ -1576,12 +1563,14 @@ const App: React.FC = () => {
       fontFamily: "'Source Code Pro', 'Fira Code', monospace",
       color: "#2f3136",
       caretColor: "#000",
-      paddingBottom: "100px" 
+      paddingBottom: "100px" // Ensure space to scroll past end
     },
+    // Force Scroll behavior
     ".cm-scroller": {
       overflow: "auto !important",
       fontFamily: "inherit"
     },
+    // Gutters (Line Numbers)
     ".cm-gutters": {
       backgroundColor: "#f4f5f7", 
       color: "#8899a6",
@@ -1593,12 +1582,15 @@ const App: React.FC = () => {
       backgroundColor: "#e8eaed",
       color: "#2f3136"
     },
+    // Active Line
     ".cm-activeLine": {
       backgroundColor: "rgba(0, 0, 0, 0.03)"
     },
+    // Selection
     ".cm-selectionBackground, .cm-content ::selection": {
       backgroundColor: "#b5d5ff !important"
     },
+    // Search Match
     ".cm-searchMatch": {
       backgroundColor: "#ffff00"
     }
@@ -1606,12 +1598,13 @@ const App: React.FC = () => {
 
   const renderCodeEditorPanel = (containerClasses: string, style?: React.CSSProperties) => (
       <div style={style} className={`flex flex-col bg-white overflow-hidden ${containerClasses}`}>
+        {/* Overleaf-style Toolbar */}
         <div className="px-3 py-2 border-b border-slate-300 flex items-center justify-between shrink-0 bg-[#f4f5f7]">
           <div className="flex items-center gap-3">
             {status === AppStatus.LOADING ? (
               <div className="flex items-center gap-2">
                   <Loader2 className="w-3.5 h-3.5 text-indigo-600 animate-spin" />
-                  <span className="text-xs font-bold text-indigo-600 animate-pulse">Writing...</span>
+                  <span className="text-xs font-bold text-indigo-600 animate-pulse">Live Writing...</span>
               </div>
             ) : (
               <div className="flex items-center gap-2">
@@ -1641,6 +1634,7 @@ const App: React.FC = () => {
               className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold text-xs transition-colors shadow-sm"
             >
               <Play className="w-3 h-3 fill-current" />
+              Recompile
             </button>
             {editorContent && (
               <>
@@ -1650,6 +1644,7 @@ const App: React.FC = () => {
                 <button 
                   onClick={() => { navigator.clipboard.writeText(editorContent); setCopied(true); setTimeout(()=>setCopied(false), 2000); }}
                   className={`p-1.5 rounded transition-colors text-slate-600 ${copied ? 'bg-green-100 text-green-700' : 'hover:bg-slate-200'}`}
+                  title="Copy Code"
                 >
                   <Copy className="w-4 h-4" />
                 </button>
@@ -1665,14 +1660,21 @@ const App: React.FC = () => {
                 <p>{error}</p>
               </div>
             )}
+
             <div className="h-full w-full">
                 <CodeMirror
                 value={editorContent}
                 height="100%"
                 className="h-full"
-                extensions={[StreamLanguage.define(stex), EditorView.lineWrapping, overleafTheme]}
+                extensions={[
+                    StreamLanguage.define(stex), // Basic LaTeX Highlighting
+                    EditorView.lineWrapping,     // Text Wrap
+                    overleafTheme                // Custom Theme
+                ]}
                 onChange={handleEditorChange}
-                onCreateEditor={(view) => { editorViewRef.current = view; }}
+                onCreateEditor={(view) => {
+                    editorViewRef.current = view;
+                }}
                 basicSetup={{
                     lineNumbers: true,
                     highlightActiveLineGutter: true,
@@ -1695,20 +1697,21 @@ const App: React.FC = () => {
   );
 
   return (
-    // Use h-[100dvh] for dynamic viewport height on mobile
-    <div className="flex flex-col h-[100dvh] bg-slate-50 font-sans selection:bg-indigo-100 overflow-hidden">
+    <div className="flex flex-col h-screen bg-slate-50 font-sans selection:bg-indigo-100 overflow-hidden">
       
       {/* HEADER */}
-      <header className="flex-none h-14 lg:h-12 bg-white border-b border-slate-200 px-3 lg:px-4 flex items-center justify-between z-10 shadow-sm safe-top">
+      <header className="flex-none h-12 bg-white border-b border-slate-200 px-4 flex items-center justify-between z-10 shadow-sm">
          <div className="flex items-center gap-3">
             <div className="flex items-baseline gap-1">
-              <h1 className="text-lg font-black text-slate-900 tracking-tight">LTV</h1>
-              <span className="text-xs font-bold text-slate-400 hidden sm:inline">by</span>
+              <h1 className="text-lg font-black text-slate-900 tracking-tight">
+                LaTexVision
+              </h1>
+              <span className="text-xs font-bold text-slate-400">by</span>
               <a
                 href="https://github.com/SSD-new"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs font-bold text-indigo-600 hover:text-indigo-700 hover:underline transition-colors hidden sm:inline"
+                className="text-xs font-bold text-indigo-600 hover:text-indigo-700 hover:underline transition-colors"
               >
                 SD
               </a>
@@ -1716,27 +1719,28 @@ const App: React.FC = () => {
             {settings.useLocalServer && (
                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-100">
                   <WifiOff className="w-3 h-3 text-indigo-600" />
-                  <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wide hidden sm:inline">Offline</span>
+                  <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wide">Offline Mode</span>
                </div>
             )}
          </div>
          
-         <div className="flex items-center gap-2 lg:gap-4">
+         <div className="flex items-center gap-4">
+             {/* View Mode Toggle */}
              {pages.length > 0 && (
-               <div className="hidden lg:flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+               <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
                  <button 
                    onClick={() => setViewMode('default')}
                    className={`px-3 py-1 flex items-center gap-2 rounded-md text-xs font-bold transition-all ${viewMode === 'default' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                  >
                    <Layout className="w-3.5 h-3.5" />
-                   <span>Генерация</span>
+                   Генерация
                  </button>
                  <button 
                    onClick={() => setViewMode('editor')}
                    className={`px-3 py-1 flex items-center gap-2 rounded-md text-xs font-bold transition-all ${viewMode === 'editor' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                  >
                    <FileCode2 className="w-3.5 h-3.5" />
-                   <span>Редактор</span>
+                   Редактор
                  </button>
                </div>
              )}
@@ -1744,7 +1748,7 @@ const App: React.FC = () => {
             <button 
               onClick={() => setShowSettings(true)}
               disabled={isEditMode}
-              className={`p-2 rounded-lg transition-colors ${isEditMode ? 'opacity-30 cursor-not-allowed' : 'hover:bg-slate-100 text-slate-500 hover:text-indigo-600'}`}
+              className={`p-1.5 rounded-lg transition-colors ${isEditMode ? 'opacity-30 cursor-not-allowed' : 'hover:bg-slate-100 text-slate-500 hover:text-indigo-600'}`}
             >
                <Settings2 className="w-5 h-5" />
             </button>
@@ -1752,24 +1756,28 @@ const App: React.FC = () => {
             {!cvReady && (
               <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
                 <Loader2 className="w-3 h-3 animate-spin" />
+                OpenCV...
               </div>
             )}
             {status === AppStatus.LOADING && (
-               <div className="flex items-center gap-2 lg:gap-3">
+               <div className="flex items-center gap-3">
                  <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 animate-pulse">
                     <Activity className="w-4 h-4" />
+                    Обработка {progress.total > 0 && `(${Math.round(progress.current / progress.total * 100)}%)`}
                  </div>
                  <button 
                     onClick={handleCancel}
                     className="flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors border border-red-200"
                  >
                     <Square className="w-3 h-3 fill-current" />
+                    Стоп
                  </button>
               </div>
             )}
             {isAnalyzing && (
               <div className="flex items-center gap-2 text-xs font-bold text-orange-500 animate-pulse">
                 <Loader2 className="w-3 h-3 animate-spin" />
+                Сегментация...
               </div>
             )}
          </div>
@@ -1783,23 +1791,27 @@ const App: React.FC = () => {
         onSave={saveSettings}
       />
       
+      {/* Refactor Modal */}
       <RefactorModal 
         isOpen={showRefactorModal} 
         onClose={() => setShowRefactorModal(false)}
-        onConfirm={(prompt) => { handleRefactor(prompt); setShowRefactorModal(false); }}
+        onConfirm={(prompt) => {
+          handleRefactor(prompt);
+          setShowRefactorModal(false);
+        }}
       />
 
       {/* MAIN CONTENT */}
       <div 
         ref={splitContainerRef} 
-        className={`flex-1 flex flex-col lg:flex-row overflow-hidden ${isDraggingSplit ? (viewMode === 'editor' ? 'cursor-row-resize lg:cursor-col-resize select-none' : '') : ''}`}
+        className={`flex-1 flex overflow-hidden ${isDraggingSplit ? 'cursor-col-resize select-none' : ''}`}
       >
         
         {pages.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-8">
             <div 
               onClick={() => cvReady && fileInputRef.current?.click()}
-              className={`w-full max-w-2xl h-[300px] lg:h-[400px] border-4 border-dashed rounded-[40px] flex flex-col items-center justify-center cursor-pointer transition-all ${!cvReady ? 'opacity-50 cursor-not-allowed border-slate-200' : 'border-slate-300 hover:border-indigo-500 hover:bg-indigo-50/50 hover:shadow-lg bg-white'}`}
+              className={`w-full max-w-2xl h-[400px] border-4 border-dashed rounded-[40px] flex flex-col items-center justify-center cursor-pointer transition-all ${!cvReady ? 'opacity-50 cursor-not-allowed border-slate-200' : 'border-slate-300 hover:border-indigo-500 hover:bg-indigo-50/50 hover:shadow-lg bg-white'}`}
             >
               {status === AppStatus.LOADING ? (
                  <div className="flex flex-col items-center">
@@ -1811,8 +1823,8 @@ const App: React.FC = () => {
                   <div className="p-6 bg-slate-100 rounded-3xl mb-4">
                     <Upload className="w-10 h-10 text-indigo-600" />
                   </div>
-                  <h3 className="text-xl font-black text-slate-800 text-center">Загрузить PDF или Фото</h3>
-                  <p className="mt-2 text-sm text-slate-500 font-medium text-center px-4">Поддержка многостраничных документов</p>
+                  <h3 className="text-xl font-black text-slate-800">Загрузить PDF или Фото</h3>
+                  <p className="mt-2 text-sm text-slate-500 font-medium">Поддержка многостраничных документов</p>
                 </>
               )}
               <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*,application/pdf" />
@@ -1820,28 +1832,29 @@ const App: React.FC = () => {
           </div>
         ) : (
           <>
-            {/* TOOLS (Mobile: Full Screen Overlay, Desktop: Sidebar) */}
+            {/* LEFT SIDEBAR (TOOLS) - Only shown in default mode */}
             {viewMode === 'default' && (
-              <div className={`${mobileTab === 'tools' ? 'flex w-full absolute inset-0 z-40 bg-white top-14 pb-20' : 'hidden lg:flex lg:w-64 lg:static'} flex-none border-r border-slate-200 flex-col overflow-y-auto`}>
+              <div className="w-64 flex-none bg-white border-r border-slate-200 flex flex-col overflow-y-auto z-20">
                 <div className="p-4 space-y-3">
                   
                   {!isEditMode ? (
+                    /* --- VIEW MODE SIDEBAR --- */
                     <>
                       <button 
                         onClick={handleConvertAll}
                         disabled={status === AppStatus.LOADING || isAnalyzing}
-                        className="w-full flex items-center justify-center gap-3 px-4 py-4 lg:py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold text-sm shadow-md disabled:opacity-50"
+                        className="w-full flex items-center gap-3 px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold text-sm shadow-md disabled:opacity-50"
                       >
-                        <Maximize2 className="w-5 h-5 lg:w-4 lg:h-4" />
+                        <Maximize2 className="w-4 h-4" />
                         <span>Конвертировать</span>
                       </button>
 
                       <button 
                         onClick={() => setShowRefactorModal(true)}
                         disabled={status === AppStatus.LOADING || isAnalyzing}
-                        className="w-full flex items-center justify-center gap-3 px-4 py-4 lg:py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-all font-bold text-sm shadow-md disabled:opacity-50 mt-2"
+                        className="w-full flex items-center gap-3 px-4 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-all font-bold text-sm shadow-md disabled:opacity-50 mt-2"
                       >
-                        <Sparkles className="w-5 h-5 lg:w-4 lg:h-4" />
+                        <Sparkles className="w-4 h-4" />
                         <span>ИИ редактирование</span>
                       </button>
 
@@ -1850,48 +1863,74 @@ const App: React.FC = () => {
                       <button 
                         onClick={enterEditMode}
                         disabled={status === AppStatus.LOADING}
-                        className="w-full flex items-center justify-center gap-3 px-4 py-4 lg:py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-xl hover:border-indigo-300 hover:text-indigo-600 transition-all font-bold text-sm"
+                        className="w-full flex items-center gap-3 px-4 py-3 bg-white border-2 border-slate-200 text-slate-700 rounded-xl hover:border-indigo-300 hover:text-indigo-600 transition-all font-bold text-sm"
                       >
-                        <PencilRuler className="w-5 h-5 lg:w-4 lg:h-4" />
+                        <PencilRuler className="w-4 h-4" />
                         <span>Редактировать разметку</span>
                       </button>
 
                       <button 
                         onClick={() => setShowDebug(!showDebug)}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-bold text-sm text-left ${showDebug ? 'bg-indigo-100 text-indigo-700' : 'text-slate-700 hover:bg-slate-100'}`}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all font-bold text-sm text-left ${showDebug ? 'bg-indigo-100 text-indigo-700' : 'text-slate-700 hover:bg-slate-100'}`}
                       >
-                        <Bug className="w-5 h-5 lg:w-4 lg:h-4" />
+                        <Bug className="w-4 h-4" />
                         <span>Настройки сетки</span>
                       </button>
 
                       {showDebug && currentPage && (
-                        <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-5 mt-2">
-                            <ConfigSlider label="Гориз. блок" value={currentPage.config.kernelW} min={1} max={maxKernelW} onChange={(val) => updateCurrentConfig({ kernelW: val })}/>
-                            <ConfigSlider label="Верт. блок" value={currentPage.config.kernelH} min={1} max={maxKernelH} onChange={(val) => updateCurrentConfig({ kernelH: val })}/>
-                            <ConfigSlider label="Отступ" value={currentPage.config.padx} min={0} max={20} onChange={(val) => updateCurrentConfig({ padx: val, pady: val })}/>
-                            <ConfigSlider label="Толерантность" value={currentPage.config.yTolerance} min={0.1} max={1.5} step={0.1} onChange={(val) => updateCurrentConfig({ yTolerance: val })}/>
+                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-4 mt-2">
+                            <ConfigSlider 
+                              label="Гориз. блок" 
+                              value={currentPage.config.kernelW} 
+                              min={1} 
+                              max={maxKernelW} 
+                              onChange={(val) => updateCurrentConfig({ kernelW: val })}
+                            />
+                            <ConfigSlider 
+                              label="Верт. блок" 
+                              value={currentPage.config.kernelH} 
+                              min={1} 
+                              max={maxKernelH} 
+                              onChange={(val) => updateCurrentConfig({ kernelH: val })}
+                            />
+                            <ConfigSlider 
+                              label="Отступ" 
+                              value={currentPage.config.padx} 
+                              min={0} 
+                              max={20} 
+                              onChange={(val) => updateCurrentConfig({ padx: val, pady: val })}
+                            />
+                            <ConfigSlider 
+                              label="Толерантность" 
+                              value={currentPage.config.yTolerance} 
+                              min={0.1} 
+                              max={1.5} 
+                              step={0.1}
+                              onChange={(val) => updateCurrentConfig({ yTolerance: val })}
+                            />
                         </div>
                       )}
                     </>
                   ) : (
+                    /* --- EDIT MODE SIDEBAR --- */
                     <>
-                      <div className="p-3 mb-2 bg-indigo-50 border border-indigo-100 rounded-lg text-xs font-medium text-indigo-800 leading-tight">
-                          Режим редактирования.
+                      <div className="p-2 mb-2 bg-indigo-50 border border-indigo-100 rounded-lg text-xs font-medium text-indigo-800 leading-tight">
+                          Режим редактирования. Изменения применятся после нажатия "Готово".
                       </div>
 
                       <button 
                           onClick={saveEditMode}
-                          className="w-full flex items-center gap-2 justify-center px-4 py-4 lg:py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all font-bold text-sm shadow-md"
+                          className="w-full flex items-center gap-2 justify-center px-4 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all font-bold text-sm shadow-md"
                         >
-                          <CheckCircle2 className="w-5 h-5 lg:w-4 lg:h-4" />
+                          <CheckCircle2 className="w-4 h-4" />
                           <span>Готово</span>
                         </button>
 
                         <button 
                           onClick={cancelEditMode}
-                          className="w-full flex items-center gap-2 justify-center px-4 py-3 bg-slate-200 text-slate-700 rounded-xl hover:bg-slate-300 transition-all font-bold text-xs"
+                          className="w-full flex items-center gap-2 justify-center px-4 py-2 bg-slate-200 text-slate-700 rounded-xl hover:bg-slate-300 transition-all font-bold text-xs"
                         >
-                          <Undo2 className="w-4 h-4" />
+                          <Undo2 className="w-3.5 h-3.5" />
                           <span>Отмена</span>
                         </button>
 
@@ -1900,19 +1939,19 @@ const App: React.FC = () => {
 
                         <button 
                           onClick={addMask}
-                          className="w-full flex items-center gap-3 px-4 py-3 lg:py-2.5 text-slate-700 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all font-bold text-sm text-left"
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-slate-700 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all font-bold text-sm text-left"
                         >
-                          <Eraser className="w-5 h-5 lg:w-4 lg:h-4" />
+                          <Eraser className="w-4 h-4" />
                           <span>Стереть область</span>
                         </button>
 
                         <div className="relative group/cut">
                           <button 
                             onClick={() => setShowCutMenu(!showCutMenu)}
-                            className={`w-full flex items-center gap-3 px-4 py-3 lg:py-2.5 text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-xl transition-all font-bold text-sm text-left justify-between ${showCutMenu ? 'bg-indigo-50 text-indigo-600' : ''}`}
+                            className={`w-full flex items-center gap-3 px-4 py-2.5 text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-xl transition-all font-bold text-sm text-left justify-between ${showCutMenu ? 'bg-indigo-50 text-indigo-600' : ''}`}
                           >
                             <div className="flex items-center gap-3">
-                              <Scissors className="w-5 h-5 lg:w-4 lg:h-4" />
+                              <Scissors className="w-4 h-4" />
                               <span>Разбить абзац</span>
                             </div>
                             <ChevronDown className="w-3 h-3 opacity-50" />
@@ -1923,7 +1962,7 @@ const App: React.FC = () => {
                                 <button
                                   key={i}
                                   onClick={() => { addCut(i); setShowCutMenu(false); }}
-                                  className="w-full text-left px-3 py-2 text-xs font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors flex justify-between"
+                                  className="w-full text-left px-3 py-1.5 text-xs font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors flex justify-between"
                                 >
                                   Колонка {i + 1}
                                 </button>
@@ -1934,9 +1973,9 @@ const App: React.FC = () => {
 
                         <button 
                           onClick={addColumn}
-                          className="w-full flex items-center gap-3 px-4 py-3 lg:py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-all font-bold text-sm text-left"
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-all font-bold text-sm text-left"
                         >
-                          <ColumnsIcon className="w-5 h-5 lg:w-4 lg:h-4" />
+                          <ColumnsIcon className="w-4 h-4" />
                           <span>Добавить колонку</span>
                         </button>
                     </>
@@ -1947,7 +1986,7 @@ const App: React.FC = () => {
                   {!isEditMode && (
                     <button 
                       onClick={reset} 
-                      className="w-full flex items-center gap-3 px-4 py-3 lg:py-2.5 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-xl transition-all font-bold text-xs text-left mt-4"
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-xl transition-all font-bold text-xs text-left mt-4"
                     >
                       <RefreshCcw className="w-3.5 h-3.5" />
                       <span>Сбросить все</span>
@@ -1958,25 +1997,20 @@ const App: React.FC = () => {
             )}
 
             {/* CENTER WORKSPACE */}
-            <div 
-                className={`${
-                    viewMode === 'default' 
-                        ? (mobileTab === 'image' ? 'flex' : 'hidden lg:flex') 
-                        : 'flex'
-                } flex-1 flex overflow-hidden relative`}
-            >
+            <div className="flex-1 flex overflow-hidden relative">
+               {/* LEFT SIDE OF CENTER SPLIT (Image in default, Code in Editor mode) */}
                {viewMode === 'default' ? (
-                 <div className="flex-1 flex flex-col items-center justify-center p-0 lg:p-4 overflow-hidden relative border-r border-slate-200 bg-slate-100 min-w-0">
-                   {/* Image Container with touch-action-none for better drag support */}
-                   <div className="relative shadow-2xl bg-white image-wrapper h-full w-full lg:rounded-sm lg:h-auto lg:w-auto lg:max-h-[calc(100%-8rem)] lg:max-w-full flex touch-none" style={{ aspectRatio: currentPage && window.innerWidth >= 1024 ? `${currentPage.width} / ${currentPage.height}` : 'auto' }}>
+                 <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-hidden relative border-r border-slate-200 bg-slate-100 min-w-0">
+                   <div className="relative shadow-2xl rounded-sm bg-white image-wrapper max-h-[calc(100%-10rem)] max-w-full flex" style={{ aspectRatio: currentPage ? `${currentPage.width} / ${currentPage.height}` : 'auto' }}>
                       <img 
                         ref={imageRef} 
                         src={currentPage?.image} 
                         alt="Page" 
-                        className={`block h-full w-full lg:max-h-full lg:max-w-full object-contain pointer-events-none select-none transition-opacity ${isEditMode ? 'opacity-80' : ''}`}
+                        className={`block max-h-full max-w-full object-contain pointer-events-none select-none transition-opacity ${isEditMode ? 'opacity-80' : ''}`}
                       />
 
-                      <div className="absolute inset-0 touch-none">
+                      {/* OVERLAYS LAYER */}
+                      <div className="absolute inset-0">
                         {currentPage?.blocks.map((b, idx) => renderBlockOverlay(b, idx))}
                         
                         {currentPage?.masks.map(mask => (
@@ -2016,21 +2050,23 @@ const App: React.FC = () => {
                         ))}
                       </div>
 
+                      {/* RE-CALCULATION / ANALYSIS LOADING OVERLAY */}
                       {isAnalyzing && (
                         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-indigo-900/5 transition-opacity duration-200">
-                          <div className="bg-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 border border-slate-100">
+                          <div className="bg-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-in fade-in zoom-in-95 duration-200 border border-slate-100">
                             <Loader2 className="w-5 h-5 text-indigo-600 animate-spin" />
-                            <span className="text-sm font-bold text-slate-700">Анализ...</span>
+                            <span className="text-sm font-bold text-slate-700">Обновление разметки...</span>
                           </div>
                         </div>
                       )}
 
+                      {/* LOADING OVERLAY (RECOGNITION) */}
                       {status === AppStatus.LOADING && (
                         <div className="absolute inset-0 z-[60] bg-white/60 backdrop-blur-sm flex flex-col items-center justify-center p-6 transition-all duration-300">
-                          <Loader2 className="w-10 h-10 text-indigo-600 animate-spin mb-4" />
-                          <h3 className="text-lg font-black text-slate-800 mb-2">Распознавание...</h3>
+                          <Loader2 className="w-12 h-12 text-indigo-600 animate-spin mb-4" />
+                          <h3 className="text-xl font-black text-slate-800 mb-2">Распознавание...</h3>
                           
-                          <div className="w-48 lg:w-64 h-2 bg-slate-200 rounded-full overflow-hidden mb-2">
+                          <div className="w-64 h-2 bg-slate-200 rounded-full overflow-hidden mb-2">
                             <div 
                               className="h-full bg-indigo-600 transition-all duration-500" 
                               style={{ width: `${(progress.current / Math.max(progress.total, 1)) * 100}%` }}
@@ -2038,12 +2074,12 @@ const App: React.FC = () => {
                           </div>
                           
                           <p className="text-sm font-bold text-slate-500">
-                            Блок {progress.current} / {progress.total}
+                            Блок {progress.current} из {progress.total}
                           </p>
                           
                           <div className="flex items-center gap-2 mt-2 text-xs font-medium text-slate-400">
                             <Clock className="w-3 h-3" />
-                            <span>{formatTime(progress.etaSeconds)}</span>
+                            <span>Осталось примерно: {formatTime(progress.etaSeconds)}</span>
                           </div>
 
                           <button 
@@ -2056,46 +2092,43 @@ const App: React.FC = () => {
                         </div>
                       )}
 
+                      {/* Pagination bar inside the wrapper but positioned below */}
                       {pages.length > 1 && (
-                        <div className="absolute bottom-6 left-0 right-0 flex items-center justify-center z-50 pointer-events-none">
-                            <div className="pointer-events-auto">
-                                <PaginationBar 
-                                  current={currentPageIndex} 
-                                  total={pages.length} 
-                                  onPrev={() => isEditMode ? changePageInEditMode('prev') : handlePageChange('prev')}
-                                  onNext={() => isEditMode ? changePageInEditMode('next') : handlePageChange('next')}
-                                />
-                            </div>
+                        <div className="absolute -bottom-20 left-0 right-0 flex items-center justify-center z-50">
+                            <PaginationBar 
+                              current={currentPageIndex} 
+                              total={pages.length} 
+                              onPrev={() => isEditMode ? changePageInEditMode('prev') : handlePageChange('prev')}
+                              onNext={() => isEditMode ? changePageInEditMode('next') : handlePageChange('next')}
+                            />
                         </div>
                       )}
                    </div>
                  </div>
                ) : (
-                 renderCodeEditorPanel("border-r border-slate-200 lg:border-r-0 lg:border-r border-slate-200 w-full", { 
-                    height: window.innerWidth < 1024 ? '50%' : undefined,
-                    width: window.innerWidth < 1024 ? '100%' : `${editorSplitPos}%`
-                 })
+                 // EDITOR MODE: Left Panel is Code
+                 renderCodeEditorPanel("border-r border-slate-200", { width: `${editorSplitPos}%` })
                )}
 
+               {/* RESIZER HANDLE (Only in Editor Mode) */}
                {viewMode === 'editor' && (
                  <div
-                    className={`w-full h-1 lg:w-1 lg:h-full hover:bg-indigo-600 cursor-row-resize lg:cursor-col-resize transition-colors z-40 flex-none bg-slate-200 relative group -mt-0.5 lg:-ml-0.5 ${isDraggingSplit ? 'bg-indigo-600' : ''}`}
+                    className={`w-1 hover:bg-indigo-600 cursor-col-resize transition-colors z-40 flex-none bg-slate-200 relative group -ml-0.5 ${isDraggingSplit ? 'bg-indigo-600 w-1' : ''}`}
                     onMouseDown={handleSplitMouseDown}
-                    onTouchStart={() => setIsDraggingSplit(true)}
                  >
-                    <div className="absolute inset-x-0 -top-2 -bottom-2 lg:inset-y-0 lg:-left-2 lg:-right-2 z-50 cursor-row-resize lg:cursor-col-resize" />
+                    {/* Invisible Hit Area */}
+                    <div className="absolute inset-y-0 -left-1 -right-1 z-50 cursor-col-resize" />
                  </div>
                )}
 
+               {/* RIGHT SIDE OF CENTER SPLIT (Always Preview) */}
                <div 
                   ref={previewContainerRef} 
-                  style={viewMode === 'editor' ? { 
-                      width: window.innerWidth < 1024 ? '100%' : `${100 - editorSplitPos}%`,
-                      height: window.innerWidth < 1024 ? '50%' : '100%'
-                  } : undefined}
-                  className={`${viewMode === 'editor' ? '' : 'flex-1'} bg-slate-200/50 overflow-y-auto relative flex flex-col items-center p-4 lg:p-8 min-w-0 border-l border-slate-200`}
+                  style={viewMode === 'editor' ? { width: `${100 - editorSplitPos}%` } : undefined}
+                  className={`${viewMode === 'editor' ? '' : 'flex-1'} bg-slate-200/50 overflow-y-auto relative flex flex-col items-center p-8 min-w-0 border-l border-slate-200`}
                 >
-                    <div className="w-full max-w-[210mm] min-h-[297mm] bg-white shadow-xl border border-slate-300/60 px-[10mm] lg:px-[15mm] py-[10mm] pb-[20mm] transition-all origin-top overflow-hidden relative flex flex-col">
+                    {/* Paper Container */}
+                    <div className="w-full max-w-[210mm] min-h-[297mm] bg-white shadow-xl border border-slate-300/60 px-[15mm] py-[10mm] pb-[20mm] transition-all origin-top overflow-hidden relative flex flex-col">
                          {rendererContent ? (
                             <div 
                                 ref={paperContentRef} 
@@ -2110,50 +2143,35 @@ const App: React.FC = () => {
                          ) : (
                             <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-4 mt-32 opacity-60">
                                 <FileText className="w-16 h-16" />
-                                <p className="font-bold text-sm text-center">Здесь появится документ</p>
+                                <p className="font-bold text-sm">Здесь появится отрендеренный документ</p>
                             </div>
                          )}
                          {rendererContent && (
                            <div className="absolute top-2 right-2 px-2 py-1 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold uppercase tracking-wider opacity-60 pointer-events-none">
-                              Стр {currentPageIndex + 1}
+                              Страница {currentPageIndex + 1}
                            </div>
                          )}
                     </div>
+                    {/* Editor Mode Pagination */}
+                    {viewMode === 'editor' && pages.length > 1 && (
+                        <div className="sticky bottom-6 mt-12 z-50">
+                            <PaginationBar 
+                              current={currentPageIndex} 
+                              total={pages.length} 
+                              onPrev={() => handlePageChange('prev')}
+                              onNext={() => handlePageChange('next')}
+                              className="shadow-2xl border-slate-300/80"
+                            />
+                        </div>
+                    )}
                </div>
             </div>
 
-            {/* RIGHT SIDEBAR (CODE OUTPUT) */}
+            {/* RIGHT SIDEBAR (CODE OUTPUT) - Only shown in default mode */}
             {viewMode === 'default' && (
-               <div className={`${mobileTab === 'code' ? 'flex w-full absolute inset-0 z-40 bg-white top-14 pb-20' : 'hidden lg:flex lg:w-[400px] lg:static'} flex-none border-l border-slate-200`}>
+               <div className="w-[400px] flex-none bg-white border-l border-slate-200 z-20">
                   {renderCodeEditorPanel("h-full")}
                </div>
-            )}
-
-            {/* MOBILE BOTTOM NAVIGATION - Safe Area Aware */}
-            {viewMode === 'default' && (
-              <div className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-200 flex items-center justify-around z-50 pb-[env(safe-area-inset-bottom)]">
-                  <button 
-                    onClick={() => setMobileTab('tools')} 
-                    className={`flex flex-col items-center gap-1 p-2 w-1/3 h-full justify-center ${mobileTab === 'tools' ? 'text-indigo-600 bg-indigo-50/50' : 'text-slate-400'}`}
-                  >
-                     <Settings2 className="w-6 h-6" />
-                     <span className="text-[10px] font-bold uppercase tracking-wide">Инструменты</span>
-                  </button>
-                  <button 
-                    onClick={() => setMobileTab('image')} 
-                    className={`flex flex-col items-center gap-1 p-2 w-1/3 h-full justify-center ${mobileTab === 'image' ? 'text-indigo-600 bg-indigo-50/50' : 'text-slate-400'}`}
-                  >
-                     <ImageIcon className="w-6 h-6" />
-                     <span className="text-[10px] font-bold uppercase tracking-wide">Фото</span>
-                  </button>
-                  <button 
-                    onClick={() => setMobileTab('code')} 
-                    className={`flex flex-col items-center gap-1 p-2 w-1/3 h-full justify-center ${mobileTab === 'code' ? 'text-indigo-600 bg-indigo-50/50' : 'text-slate-400'}`}
-                  >
-                     <FileCode2 className="w-6 h-6" />
-                     <span className="text-[10px] font-bold uppercase tracking-wide">LaTex</span>
-                  </button>
-              </div>
             )}
           </>
         )}
