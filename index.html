@@ -1,13 +1,17 @@
-
 <!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>LaTexVision — Конвертер изображений и PDF в LaTeX</title>
+  
+  <!-- Tailwind CSS via CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   
+  <!-- OpenCV.js -->
   <script async src="https://docs.opencv.org/4.5.0/opencv.js" type="text/javascript"></script>
+  
+  <!-- PDF.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>
     window.addEventListener('load', () => {
@@ -16,24 +20,48 @@
       }
     });
   </script>
+
+  <!-- Error Handler for White Screen Debugging -->
+  <script>
+    window.addEventListener('error', function(event) {
+      const root = document.getElementById('root');
+      if (root && root.innerHTML.trim() === "") {
+         document.body.innerHTML += `
+           <div style="position:fixed; top:0; left:0; width:100%; padding:20px; background:#fee2e2; color:#991b1b; font-family:sans-serif; z-index:9999;">
+             <h2 style="margin:0 0 10px 0;">Критическая ошибка запуска</h2>
+             <p style="margin:0;">${event.message}</p>
+             <p style="font-size:12px; margin-top:10px; opacity:0.8;">Проверьте консоль разработчика (F12) для деталей.</p>
+           </div>
+         `;
+      }
+    });
+  </script>
+  
+  <style>
+    /* Prevent pull-to-refresh on mobile which ruins app experience */
+    html, body {
+      overscroll-behavior-y: none;
+      overscroll-behavior-x: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+  </style>
+
 <script type="importmap">
 {
   "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "katex": "https://esm.sh/katex@^0.16.9",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "vite": "https://esm.sh/vite@^7.3.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "katex": "https://esm.sh/katex@^0.16.27",
     "katex/": "https://esm.sh/katex@^0.16.27/",
-    "@uiw/react-codemirror": "https://esm.sh/@uiw/react-codemirror@^4.21.21",
-    "@codemirror/language": "https://esm.sh/@codemirror/language@^6.9.0",
-    "@codemirror/legacy-modes/mode/stex": "https://esm.sh/@codemirror/legacy-modes@^6.3.3/mode/stex?exports=stex",
-    "@codemirror/view": "https://esm.sh/@codemirror/view@^6.20.0",
-    "@codemirror/state": "https://esm.sh/@codemirror/state@^6.3.0",
-    "@codemirror/legacy-modes/": "https://esm.sh/@codemirror/legacy-modes@^6.5.2/"
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "@uiw/react-codemirror": "https://esm.sh/@uiw/react-codemirror@^4.25.4",
+    "@codemirror/language": "https://esm.sh/@codemirror/language@^6.12.1",
+    "@codemirror/legacy-modes/": "https://esm.sh/@codemirror/legacy-modes@^6.5.2/",
+    "@codemirror/view": "https://esm.sh/@codemirror/view@^6.39.11",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "@google/genai": "https://esm.sh/@google/genai@^1.37.0"
   }
 }
 </script>
