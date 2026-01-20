@@ -51,7 +51,6 @@ const processLatexToHtml = (text: string): string => {
   processed = processed.replace(/\\text\{(.*?)\}/g, '$1');
 
   // 3. Sections
-  // Reduced top margin (mt-4 -> mt-2) and bottom margin (mb-2 -> mb-1)
   processed = processed.replace(
     /\\section\*?\{([^}]*)\}/g,
     '\n__SECTION_START__<h2 class="text-lg font-bold mt-2 mb-1 text-slate-900 leading-snug w-full first:mt-0 break-inside-avoid break-after-avoid uppercase">$1</h2>__SECTION_END__\n'
@@ -76,7 +75,6 @@ const processLatexToHtml = (text: string): string => {
        const mathId = content;
        const entry = mathStore.find(m => m.id === mathId);
        if (entry && entry.isDisplay) {
-         // Reduced margin for display math (my-2 -> my-1)
          return `<div class="my-1 flex justify-center w-full overflow-x-auto no-scrollbar">${entry.html}</div>`;
        }
     }
@@ -86,7 +84,6 @@ const processLatexToHtml = (text: string): string => {
         return entry ? entry.html : '';
     });
 
-    // Tightened mb-1.5 -> mb-1
     return `<p class="mb-1 indent-4 leading-relaxed text-slate-800 text-justify text-[0.95rem] break-inside-avoid">${content}</p>`;
   });
 
@@ -111,7 +108,6 @@ const LatexRenderer: React.FC<LatexRendererProps> = ({ content }) => {
     // Switch from GRID to COLUMNS
     body = body.replace(/\\begin\{multicols\}\{(\d+)\}([\s\S]*?)\\end\{multicols\}/g, (match, cols, inner) => {
         const innerHtml = processLatexToHtml(inner);
-        // Reduced gap (gap-6 -> gap-5) and margin (my-2 -> my-1)
         const colClass = `columns-1 md:columns-${cols} gap-5 my-1 w-full text-justify`;
         const html = `<div class="${colClass}">${innerHtml}</div>`;
         
@@ -130,10 +126,10 @@ const LatexRenderer: React.FC<LatexRendererProps> = ({ content }) => {
     return mainHtml;
   }, [content]);
 
-  // Removed p-8, bg-white, shadow-sm, min-h-[297mm] to avoid double padding/styling with the container in App.tsx
   return (
+    // Added overflow-x-auto to wrapper to allow horizontal scrolling on mobile for very wide elements
     <div
-      className="latex-document font-serif text-slate-900 w-full"
+      className="latex-document font-serif text-slate-900 w-full overflow-x-auto"
       dangerouslySetInnerHTML={{ __html: htmlContent }}
     />
   );
